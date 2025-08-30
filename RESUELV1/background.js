@@ -174,7 +174,9 @@ async function callGemini(prompt, apiKey) {
 }
 
 async function callCerebras(prompt, apiKey) {
-  const endpoint = 'https://api.cerebras.ai/v2/chat/completions';
+  // Cerebras currently exposes its chat completions API under the v1 path.
+  // Using v2 returns 404 Not Found, so ensure we call the correct endpoint.
+  const endpoint = 'https://api.cerebras.ai/v1/chat/completions';
   const body = {
     model: 'gpt-oss-120b',
     messages: [{ role: 'user', content: prompt }],
