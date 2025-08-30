@@ -7,14 +7,18 @@
 // - Floating bubble with rainbow modal
 
 (() => {
-  const STATE = { 
-    overlay: null, 
-    rectEl: null, 
-    modal: null, 
+  const STATE = {
+    overlay: null,
+    rectEl: null,
+    modal: null,
     bubble: null,
     currentAnswer: '',
-    isTyping: false
+    isTyping: false,
+    selBtn: null,
+    lastFocused: null
   };
+
+  document.addEventListener('focusin', (e) => { STATE.lastFocused = e.target; });
 
   // Create floating bubble
   function createFloatingBubble() {
@@ -117,21 +121,21 @@
           <button class="close-btn">&times;</button>
         </div>
         <div class="menu-items">
-          <div class="menu-item" data-action="ip-info">
-            <span class="menu-icon">🌐</span>
-            <span class="menu-text">IP Information</span>
-          </div>
           <div class="menu-item" data-action="ocr">
             <span class="menu-icon">📷</span>
             <span class="menu-text">OCR Capture</span>
           </div>
-          <div class="menu-item" data-action="new-survey">
-            <span class="menu-icon">📋</span>
-            <span class="menu-text">New Survey</span>
+          <div class="menu-item" data-action="write-last">
+            <span class="menu-icon">✍️</span>
+            <span class="menu-text">Write Last Answer</span>
           </div>
-          <div class="menu-item" data-action="human-typing">
-            <span class="menu-icon">⌨️</span>
-            <span class="menu-text">Human Typing</span>
+          <div class="menu-item" data-action="clear-context">
+            <span class="menu-icon">🧹</span>
+            <span class="menu-text">Clear AI Context</span>
+          </div>
+          <div class="menu-item" data-action="ip-info">
+            <span class="menu-icon">🌐</span>
+            <span class="menu-text">IP Information</span>
           </div>
         </div>
       </div>
@@ -266,6 +270,21 @@
 
   async function handleBubbleAction(action) {
     switch (action) {
+      case 'ocr':
+        startOCRCapture();
+        break;
+      case 'write-last':
+        try {
+          const { lastAnswer = '' } = await chrome.storage.local.get('lastAnswer');
+          showLastAnswerModal(lastAnswer);
+        } catch (e) {
+          showNotification('No last answer available');
+        }
+        break;
+      case 'clear-context':
+        await chrome.storage.local.set({ contextQA: [] });
+        showNotification('AI context cleared');
+        break;
       case 'ip-info':
         try {
           const response = await chrome.runtime.sendMessage({ type: 'GET_PUBLIC_IP' });
@@ -279,15 +298,6 @@
           showNotification('Failed to get IP information: ' + e.message);
         }
         break;
-      case 'ocr':
-        startOCRCapture();
-        break;
-      case 'new-survey':
-        showNewSurveyModal();
-        break;
-      case 'human-typing':
-        toggleHumanTyping();
-        break;
     }
   }
 
@@ -296,18 +306,64 @@
       <div style="background: linear-gradient(120deg, #120f12 80%, #0a0f17 100%); padding: 20px; border-radius: 10px; margin: 10px 0;">
         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
           <strong style="color: #ff9800;">IP Address:</strong>
-          <span style="color: #e2e8f0; font-family: monospace;">${ip}</span>
-          <button onclick="navigator.clipboard.writeText('${ip}')" style="background: #22c55e; border: none; color: white; padding: 5px 10px; border-radius: 5px; cursor: pointer; font-size: 12px;">Copy</button>
+          <span style="color: #e2e8f0; font-family: monospace;">${ip || 'Unknown'}</span>
+          <button onclick="navigator.clipboard.writeText('${ip || ''}')" style="background: #22c55e; border: none; color: white; padding: 5px 10px; border-radius: 5px; cursor: pointer; font-size: 12px;">Copy</button>
         </div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; color: #e2e8f0;">
-          <div><strong style="color: #ffd600;">Country:</strong> ${country}</div>
-          <div><strong style="color: #ffd600;">City:</strong> ${city}</div>
-          <div><strong style="color: #ffd600;">Postal:</strong> ${postal}</div>
-          <div><strong style="color: #ffd600;">ISP:</strong> ${isp}</div>
-          <div style="grid-column: 1 / -1;"><strong style="color: #ffd600;">Timezone:</strong> ${timezone}</div>
+          <div><strong style="color: #ffd600;">Country:</strong> ${country || 'Unknown'}</div>
+          <div><strong style="color: #ffd600;">City:</strong> ${city || 'Unknown'}</div>
+          <div><strong style="color: #ffd600;">Postal:</strong> ${postal || 'Unknown'}</div>
+          <div><strong style="color: #ffd600;">ISP:</strong> ${isp || 'Unknown'}</div>
+          <div style="grid-column: 1 / -1;"><strong style="color: #ffd600;">Timezone:</strong> ${timezone || 'Unknown'}</div>
         </div>
       </div>
     `);
+  }
+
+  function showLastAnswerModal(answer) {
+    const text = (answer || '').trim();
+    if (!text) { showNotification('No last answer available'); return; }
+    const modal = createStyledModal('Last Answer', `
+      <div style="background: linear-gradient(120deg, #120f12 80%, #0a0f17 100%); padding: 20px; border-radius: 10px; margin: 10px 0;">
+        <div id="lastAnswerText" style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; margin-bottom: 20px; max-height: 200px; overflow-y: auto; color: #e2e8f0;">${text}</div>
+        <div id="lastAnswerCountdown" style="display:none; text-align:center; font-size:24px; font-weight:bold; color:#ff9800; margin-bottom:20px;">3</div>
+        <div id="lastAnswerBtns" style="display: flex; justify-content: center; gap: 10px;">
+          <button id="lastAnswerType" style="background: linear-gradient(45deg, #4ecdc4, #44a08d); border: none; color: white; padding: 10px 20px; border-radius: 25px; cursor: pointer; font-weight: bold;">Start Typing</button>
+          <button id="lastAnswerCopy" style="background: linear-gradient(45deg, #ff6b6b, #feca57); border: none; color: white; padding: 10px 20px; border-radius: 25px; cursor: pointer; font-weight: bold;">Manual Entry</button>
+        </div>
+      </div>
+    `);
+
+    setTimeout(() => {
+      document.getElementById('lastAnswerType')?.addEventListener('click', async () => {
+        const txt = document.getElementById('lastAnswerText');
+        const cd = document.getElementById('lastAnswerCountdown');
+        const btns = document.getElementById('lastAnswerBtns');
+        if (txt) txt.style.display = 'none';
+        if (btns) btns.style.display = 'none';
+        if (cd) {
+          cd.style.display = 'block';
+          let count = 3;
+          cd.textContent = count;
+          const timer = setInterval(() => {
+            count--;
+            if (count > 0) {
+              cd.textContent = count;
+            } else {
+              clearInterval(timer);
+              const m = document.getElementById('resuelv-styled-modal');
+              if (m) m.remove();
+              typeAnswer(text, { skipCountdown: true });
+            }
+          }, 1000);
+        }
+      });
+      document.getElementById('lastAnswerCopy')?.addEventListener('click', () => {
+        navigator.clipboard.writeText(text);
+        const m = document.getElementById('resuelv-styled-modal'); if (m) m.remove();
+        showNotification('Answer copied to clipboard');
+      });
+    }, 100);
   }
 
   function showNewSurveyModal() {
@@ -315,13 +371,14 @@
       const modal = createStyledModal('New Survey', `
         <div style="background: linear-gradient(120deg, #120f12 80%, #0a0f17 100%); padding: 20px; border-radius: 10px; margin: 10px 0;">
           <p style="color: #e2e8f0; margin-bottom: 15px;">The text in your clipboard will be typed in human-like manner:</p>
-          <div style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; margin: 15px 0; max-height: 150px; overflow-y: auto;">
+          <div id="newSurveyText" style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; margin: 15px 0; max-height: 150px; overflow-y: auto;">
             <pre style="color: #94a3b8; white-space: pre-wrap; font-size: 14px; margin: 0;">${clipboardText || 'No text in clipboard'}</pre>
           </div>
-          <div style="display: flex; justify-content: center; gap: 10px; margin-top: 20px;">
-            <button id="writeNowBtn" style="background: linear-gradient(45deg, #4ecdc4, #44a08d); border: none; color: white; padding: 12px 24px; border-radius: 25px; cursor: pointer; font-weight: bold; font-size: 14px;">Write Now</button>
+          <div id="newSurveyCountdown" style="display:none; text-align:center; font-size:24px; font-weight:bold; color:#ff9800; margin-bottom:20px;">3</div>
+          <div id="newSurveyBtns" style="display: flex; justify-content: center; gap: 10px; margin-top: 20px;">
+            <button id="writeNowBtn" style="background: linear-gradient(45deg, #4ecdc4, #44a08d); border: none; color: white; padding: 12px 24px; border-radius: 25px; cursor: pointer; font-weight: bold; font-size: 14px;">Start Typing</button>
+            <button id="manualEntryBtn" style="background: linear-gradient(45deg, #ff6b6b, #feca57); border: none; color: white; padding: 12px 24px; border-radius: 25px; cursor: pointer; font-weight: bold; font-size: 14px;">Manual Entry</button>
           </div>
-          <div id="countdown" style="text-align: center; margin-top: 15px; font-size: 24px; font-weight: bold; color: #ff9800; display: none;"></div>
         </div>
       `, () => {
         // Clear new survey context
@@ -331,46 +388,42 @@
       // Add event listener for Write Now button
       setTimeout(() => {
         const writeBtn = document.getElementById('writeNowBtn');
+        const manualBtn = document.getElementById('manualEntryBtn');
+        const txt = document.getElementById('newSurveyText');
+        const cd = document.getElementById('newSurveyCountdown');
+        const btns = document.getElementById('newSurveyBtns');
         if (writeBtn) {
           writeBtn.addEventListener('click', () => {
-            startCountdownAndType(clipboardText);
+            if (txt) txt.style.display = 'none';
+            if (btns) btns.style.display = 'none';
+            if (cd) {
+              cd.style.display = 'block';
+              let count = 3; cd.textContent = count;
+              const interval = setInterval(() => {
+                count--;
+                if (count > 0) {
+                  cd.textContent = count;
+                } else {
+                  clearInterval(interval);
+                  const m = document.getElementById('resuelv-styled-modal');
+                  if (m) m.remove();
+                  typeAnswer(clipboardText, { skipCountdown: true });
+                }
+              }, 1000);
+            }
+          });
+        }
+        if (manualBtn) {
+          manualBtn.addEventListener('click', () => {
+            navigator.clipboard.writeText(clipboardText || '');
+            const m = document.getElementById('resuelv-styled-modal'); if (m) m.remove();
+            showNotification('Answer copied to clipboard');
           });
         }
       }, 100);
     }).catch(() => {
       showNotification('Could not access clipboard');
     });
-  }
-
-  function startCountdownAndType(text) {
-    const countdownEl = document.getElementById('countdown');
-    const writeBtn = document.getElementById('writeNowBtn');
-    
-    if (!countdownEl || !writeBtn) return;
-    
-    writeBtn.style.display = 'none';
-    countdownEl.style.display = 'block';
-    
-    let count = 3;
-    countdownEl.textContent = count;
-    
-    const interval = setInterval(() => {
-      count--;
-      if (count > 0) {
-        countdownEl.textContent = count;
-      } else {
-        clearInterval(interval);
-        countdownEl.textContent = 'Starting...';
-        
-        // Close modal and start typing
-        setTimeout(() => {
-          const modal = document.getElementById('resuelv-styled-modal');
-          if (modal) modal.remove();
-          
-          typeAnswer(text);
-        }, 500);
-      }
-    }, 1000);
   }
 
   function startOCRCapture() {
@@ -775,6 +828,7 @@
       
       const answer = response.result;
       STATE.currentAnswer = answer;
+      await chrome.storage.local.set({ lastAnswer: answer });
       
       // Update modal
       const modal = STATE.modal;
@@ -813,12 +867,14 @@
     }
   }
 
-  async function typeAnswer(text) {
+  async function typeAnswer(text, opts = {}) {
     if (STATE.isTyping) return;
     STATE.isTyping = true;
-    
+
     try {
       const { typingSpeed = 'normal' } = await chrome.storage.local.get('typingSpeed');
+      if (STATE.lastFocused) STATE.lastFocused.focus();
+      if (!opts.skipCountdown) await showCountdown(3);
       await typeIntoFocusedElement(text, { speed: typingSpeed });
       showNotification('Answer typed successfully!');
     } catch (e) {
@@ -871,6 +927,7 @@
           }
           case 'TYPE_TEXT': {
             const { text, options } = msg;
+            await showCountdown(3);
             await typeIntoFocusedElement(text, options || {});
             sendResponse({ ok: true });
             break;
@@ -948,6 +1005,26 @@
 
   function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+  function showCountdown(sec) {
+    return new Promise((resolve) => {
+      let count = sec;
+      const el = document.createElement('div');
+      el.style.cssText = 'position:fixed;top:20px;right:20px;padding:8px 14px;background:rgba(0,0,0,0.7);color:#ff9800;font-size:24px;border-radius:8px;z-index:2147483647;';
+      el.textContent = count;
+      document.body.appendChild(el);
+      const timer = setInterval(() => {
+        count--;
+        if (count <= 0) {
+          clearInterval(timer);
+          el.remove();
+          resolve();
+        } else {
+          el.textContent = count;
+        }
+      }, 1000);
+    });
+  }
+
   async function typeIntoFocusedElement(text, options) {
     const el = document.activeElement || document.body;
     const speed = options.speed || 'normal';
@@ -992,6 +1069,43 @@
     // This would toggle between normal and human-like typing
     showNotification('Human typing mode toggled');
   }
+
+  function handleSelection() {
+    const sel = window.getSelection();
+    const text = sel && sel.toString ? sel.toString().trim() : '';
+    if (text) {
+      const rect = sel.getRangeAt(0).getBoundingClientRect();
+      showSelectionButton(rect, text);
+    } else {
+      removeSelectionButton();
+    }
+  }
+
+  function showSelectionButton(rect, text) {
+    removeSelectionButton();
+    const btn = document.createElement('div');
+    btn.id = 'resuelv-gen-btn';
+    btn.textContent = 'Generate Answer';
+    btn.style.cssText = `position:absolute;left:${window.scrollX + rect.right + 5}px;top:${window.scrollY + rect.top - 30}px;z-index:2147483647;background:#23272b;color:#ff9800;padding:4px 8px;border-radius:6px;font-size:12px;box-shadow:0 0 8px rgba(255,152,0,0.7);cursor:pointer;transition:transform 0.2s;`;
+    btn.addEventListener('mouseenter', () => { btn.style.transform = 'scale(1.05)'; });
+    btn.addEventListener('mouseleave', () => { btn.style.transform = 'scale(1)'; });
+    btn.addEventListener('click', () => { removeSelectionButton(); createRainbowModal(text); });
+    document.body.appendChild(btn);
+    STATE.selBtn = btn;
+  }
+
+  function removeSelectionButton() {
+    if (STATE.selBtn) { STATE.selBtn.remove(); STATE.selBtn = null; }
+  }
+
+  document.addEventListener('mouseup', handleSelection);
+  document.addEventListener('keyup', handleSelection);
+  document.addEventListener('selectionchange', () => {
+    if (!window.getSelection().toString()) removeSelectionButton();
+  });
+  document.addEventListener('mousedown', (e) => {
+    if (STATE.selBtn && !STATE.selBtn.contains(e.target)) removeSelectionButton();
+  });
 
   // Initialize floating bubble when page loads
   if (document.readyState === 'loading') {
