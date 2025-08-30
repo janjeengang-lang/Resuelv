@@ -1089,7 +1089,12 @@
     btn.style.cssText = `position:absolute;left:${window.scrollX + rect.right + 5}px;top:${window.scrollY + rect.top - 30}px;z-index:2147483647;background:#23272b;color:#ff9800;padding:4px 8px;border-radius:6px;font-size:12px;box-shadow:0 0 8px rgba(255,152,0,0.7);cursor:pointer;transition:transform 0.2s;`;
     btn.addEventListener('mouseenter', () => { btn.style.transform = 'scale(1.05)'; });
     btn.addEventListener('mouseleave', () => { btn.style.transform = 'scale(1)'; });
-    btn.addEventListener('click', () => { removeSelectionButton(); createRainbowModal(text); });
+    // Use mousedown so selectionchange doesn't remove the button before the handler fires
+    btn.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      removeSelectionButton();
+      createRainbowModal(text);
+    });
     document.body.appendChild(btn);
     STATE.selBtn = btn;
   }
@@ -1100,9 +1105,7 @@
 
   document.addEventListener('mouseup', handleSelection);
   document.addEventListener('keyup', handleSelection);
-  document.addEventListener('selectionchange', () => {
-    if (!window.getSelection().toString()) removeSelectionButton();
-  });
+  // Removed selectionchange to ensure Generate button remains clickable
   document.addEventListener('mousedown', (e) => {
     if (STATE.selBtn && !STATE.selBtn.contains(e.target)) removeSelectionButton();
   });
