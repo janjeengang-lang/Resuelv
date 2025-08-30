@@ -104,14 +104,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 async function callOpenRouter(prompt) {
-  const { openrouterApiKey = '', openrouterModel, geminiApiKey = '', aiProvider = 'openrouter' } = await chrome.storage.local.get([
-    'openrouterApiKey', 'openrouterModel', 'geminiApiKey', 'aiProvider'
+  const { openrouterApiKey = '', openrouterModel, geminiApiKey = '', cerebrasApiKey = '', aiProvider = 'openrouter' } = await chrome.storage.local.get([
+    'openrouterApiKey', 'openrouterModel', 'geminiApiKey', 'cerebrasApiKey', 'aiProvider'
   ]);
-  
+
   if (aiProvider === 'gemini' && geminiApiKey) {
     return await callGemini(prompt, geminiApiKey);
   }
-  
+  if (aiProvider === 'cerebras' && cerebrasApiKey) {
+    return await callCerebras(prompt, cerebrasApiKey);
+  }
+
   if (!openrouterApiKey) {
     const e = new Error('Missing OpenRouter API key (set it in Options).');
     e.code = 401; throw e;
@@ -167,6 +170,28 @@ async function callGemini(prompt, apiKey) {
   }
   const data = await res.json();
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  return sanitize(text);
+}
+
+async function callCerebras(prompt, apiKey) {
+  const endpoint = 'https://api.cerebras.ai/v2/chat/completions';
+  const body = {
+    model: 'gpt-oss-120b',
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.2,
+    max_completion_tokens: 1024
+  };
+  const headers = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${apiKey}`
+  };
+  const res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(`Cerebras error ${res.status}: ${t}`);
+  }
+  const data = await res.json();
+  const text = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.delta?.content || '';
   return sanitize(text);
 }
 
