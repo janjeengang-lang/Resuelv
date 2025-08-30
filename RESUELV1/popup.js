@@ -110,6 +110,7 @@ async function handleMode(mode){
     if (!gen?.ok) throw new Error(gen?.error||'Generate failed');
     const answer = postProcess(mode, gen.result);
     els.preview.value = answer;
+    await chrome.storage.local.set({ lastAnswer: answer });
     await saveContext({ q: questionText, a: answer });
     renderHistory(await getContext());
     notify('Ready');
