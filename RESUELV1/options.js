@@ -4,6 +4,7 @@ const els = {
   openrouterKey: document.getElementById('openrouterKey'),
   openrouterModel: document.getElementById('openrouterModel'),
   geminiKey: document.getElementById('geminiKey'),
+  cerebrasKey: document.getElementById('cerebrasKey'),
   ocrKey: document.getElementById('ocrKey'),
   typingSpeed: document.getElementById('typingSpeed'),
   ocrLang: document.getElementById('ocrLang'),
@@ -17,11 +18,12 @@ function notify(msg, isErr=false){ els.status.textContent = msg; els.status.clas
 
 async function load(){
   try {
-    const s = await chrome.storage.local.get(['aiProvider','openrouterApiKey','openrouterModel','geminiApiKey','ocrApiKey','typingSpeed','ocrLang']);
+    const s = await chrome.storage.local.get(['aiProvider','openrouterApiKey','openrouterModel','geminiApiKey','cerebrasApiKey','ocrApiKey','typingSpeed','ocrLang']);
     els.aiProvider.value = s.aiProvider || 'openrouter';
     els.openrouterKey.value = s.openrouterApiKey || '';
     els.openrouterModel.value = s.openrouterModel || 'google/gemini-2.0-flash-exp:free';
     els.geminiKey.value = s.geminiApiKey || '';
+    els.cerebrasKey.value = s.cerebrasApiKey || '';
     els.ocrKey.value = s.ocrApiKey || '';
     els.typingSpeed.value = s.typingSpeed || 'normal';
     els.ocrLang.value = s.ocrLang || 'eng';
@@ -39,6 +41,7 @@ els.save.addEventListener('click', async () => {
       openrouterApiKey: els.openrouterKey.value.trim(),
       openrouterModel: els.openrouterModel.value,
       geminiApiKey: els.geminiKey.value.trim(),
+      cerebrasApiKey: els.cerebrasKey.value.trim(),
       ocrApiKey: els.ocrKey.value.trim(),
       typingSpeed: els.typingSpeed.value,
       ocrLang: els.ocrLang.value,

@@ -104,14 +104,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 async function callOpenRouter(prompt) {
-  const { openrouterApiKey = '', openrouterModel, geminiApiKey = '', aiProvider = 'openrouter' } = await chrome.storage.local.get([
-    'openrouterApiKey', 'openrouterModel', 'geminiApiKey', 'aiProvider'
+  const { openrouterApiKey = '', openrouterModel, geminiApiKey = '', cerebrasApiKey = '', aiProvider = 'openrouter' } = await chrome.storage.local.get([
+    'openrouterApiKey', 'openrouterModel', 'geminiApiKey', 'cerebrasApiKey', 'aiProvider'
   ]);
-  
+
   if (aiProvider === 'gemini' && geminiApiKey) {
     return await callGemini(prompt, geminiApiKey);
   }
-  
+  if (aiProvider === 'cerebras' && cerebrasApiKey) {
+    return await callCerebras(prompt, cerebrasApiKey);
+  }
+
   if (!openrouterApiKey) {
     const e = new Error('Missing OpenRouter API key (set it in Options).');
     e.code = 401; throw e;
@@ -170,6 +173,30 @@ async function callGemini(prompt, apiKey) {
   return sanitize(text);
 }
 
+async function callCerebras(prompt, apiKey) {
+  // Cerebras currently exposes its chat completions API under the v1 path.
+  // Using v2 returns 404 Not Found, so ensure we call the correct endpoint.
+  const endpoint = 'https://api.cerebras.ai/v1/chat/completions';
+  const body = {
+    model: 'gpt-oss-120b',
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.2,
+    max_completion_tokens: 1024
+  };
+  const headers = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${apiKey}`
+  };
+  const res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(`Cerebras error ${res.status}: ${t}`);
+  }
+  const data = await res.json();
+  const text = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.delta?.content || '';
+  return sanitize(text);
+}
+
 async function performOCR(imageDataUrl, lang) {
   const { ocrApiKey = '', ocrLang } = await chrome.storage.local.get(['ocrApiKey', 'ocrLang']);
   const language = lang || ocrLang || DEFAULTS.ocrLang;
@@ -191,59 +218,87 @@ async function performOCR(imageDataUrl, lang) {
 }
 
 async function getPublicIP() {
-  try {
-    const res = await fetch('https://ipapi.co/json/', {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      }
-    });
-    
-    if (!res.ok) {
-      throw new Error(`IP API failed: ${res.status} ${res.statusText}`);
+  const headers = {
+    'Accept': 'application/json',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+  };
+
+  const services = [
+    {
+      url: 'https://ipapi.co/json/',
+      map: (d) => ({
+        ip: d?.ip,
+        country: d?.country_name || d?.country,
+        city: d?.city,
+        postal: d?.postal,
+        isp: d?.org,
+        timezone: d?.timezone
+      })
+    },
+    {
+      url: 'https://ipinfo.io/json',
+      map: (d) => ({
+        ip: d?.ip,
+        country: d?.country,
+        city: d?.city,
+        postal: d?.postal,
+        isp: d?.org,
+        timezone: d?.timezone
+      })
+    },
+    {
+      url: 'https://ip-api.com/json/',
+      map: (d) => ({
+        ip: d?.query,
+        country: d?.country,
+        city: d?.city,
+        postal: d?.zip,
+        isp: d?.isp,
+        timezone: d?.timezone
+      })
     }
-    
-    const d = await res.json();
-    
-    if (d.error) {
-      throw new Error(`IP API error: ${d.reason || d.error}`);
-    }
-    
-    return {
-      ip: d?.ip || 'Unknown',
-      country: d?.country_name || d?.country || 'Unknown',
-      city: d?.city || 'Unknown',
-      postal: d?.postal || 'Unknown',
-      region: d?.region || 'Unknown',
-      timezone: d?.timezone || 'Unknown',
-      isp: d?.org || 'Unknown',
-      flag: d?.country_code ? `https://flagcdn.com/16x12/${d.country_code.toLowerCase()}.png` : ''
-    };
-  } catch (error) {
-    console.error('IP fetch error:', error);
-    // Fallback to a simpler service
+  ];
+
+  for (const svc of services) {
     try {
-      const fallbackRes = await fetch('https://api.ipify.org?format=json');
-      if (fallbackRes.ok) {
-        const fallbackData = await fallbackRes.json();
+      const res = await fetch(svc.url, { method: 'GET', headers });
+      if (!res.ok) throw new Error(`IP API failed: ${res.status}`);
+      const data = await res.json();
+      if (data?.error) throw new Error(data.error);
+      const info = svc.map(data);
+      if (info && info.ip) {
         return {
-          ip: fallbackData.ip || 'Unknown',
-          country: 'Unknown',
-          city: 'Unknown',
-          postal: 'Unknown',
-          region: 'Unknown',
-          timezone: 'Unknown',
-          isp: 'Unknown',
-          flag: ''
+          ip: info.ip || 'Unknown',
+          country: info.country || 'Unknown',
+          city: info.city || 'Unknown',
+          postal: info.postal || 'Unknown',
+          timezone: info.timezone || 'Unknown',
+          isp: info.isp || 'Unknown'
         };
       }
-    } catch (fallbackError) {
-      console.error('Fallback IP fetch error:', fallbackError);
+    } catch (e) {
+      console.error('IP service error:', svc.url, e);
     }
-    
-    throw error;
   }
+
+  // Final fallback: ipify for IP only
+  try {
+    const r = await fetch('https://api.ipify.org?format=json');
+    if (r.ok) {
+      const d = await r.json();
+      return {
+        ip: d?.ip || 'Unknown',
+        country: 'Unknown',
+        city: 'Unknown',
+        postal: 'Unknown',
+        timezone: 'Unknown',
+        isp: 'Unknown'
+      };
+    }
+  } catch (e) {
+    console.error('Fallback IP fetch error:', e);
+  }
+  throw new Error('Unable to retrieve IP information');
 }
 
 function sanitize(s) {

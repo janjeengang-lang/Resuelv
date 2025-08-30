@@ -1,0 +1,345 @@
+; AutoHotkey v1 script: ResuelvSurveyHelper
+; Replaces Chrome extension 'Resuelv+ AI Survey Helper'
+; Features: popup UI, floating bubble, selection button, rainbow modal,
+; countdown typing, last answer modal, IP info retrieval, AI integrations
+
+;=====================
+; Configuration
+;=====================
+INI_FILE := A_ScriptDir "\ResuelvSurveyHelper.ini"
+LAST_ANSWER := ""
+API_PROVIDER := "OpenRouter" ; default provider
+
+; Load API keys from INI
+if FileExist(INI_FILE) {
+    IniRead, OPENROUTER_KEY, %INI_FILE%, API, OpenRouter,
+    IniRead, GEMINI_KEY, %INI_FILE%, API, Gemini,
+    IniRead, CEREBRAS_KEY, %INI_FILE%, API, Cerebras,
+    IniRead, OCR_KEY, %INI_FILE%, API, OCR,
+}
+
+;=====================
+; Hotkeys
+;=====================
+^+p::TogglePopup()
+
+;=====================
+; Main Popup UI
+;=====================
+TogglePopup() {
+    global API_PROVIDER
+    if WinExist("Resuelv Popup") {
+        WinClose, Resuelv Popup
+        return
+    }
+
+    Gui, ResPopup:New, +AlwaysOnTop -Caption +Border, Resuelv Popup
+    Gui, ResPopup:Color, 1d1d1d
+    Gui, ResPopup:Font, cFFFFFF s10, Segoe UI
+
+    types := ["Open-ended","MCQ","Scale","Yes/No","Auto-detect","OCR"]
+    Gui, ResPopup:Add, Button, vPrevBtn gPrevType w25 h25, ‹
+    Loop, 3 {
+        idx := A_Index
+        Gui, ResPopup:Add, Button, vTypeBtn%idx% gTypeSelect w90 h30, % types[idx]
+    }
+    Gui, ResPopup:Add, Button, x+5 vNextBtn gNextType w25 h25, ›
+
+    Gui, ResPopup:Add, Edit, vPreview w300 h100 +ReadOnly -VScroll
+    Gui, ResPopup:Add, Button, vWriteHere gDoWrite w90, Write Here
+    Gui, ResPopup:Add, Button, x+5 gCopyAns w90, Copy
+    Gui, ResPopup:Add, Button, x+5 gResetCtx w90, Reset Context
+
+    Gui, ResPopup:Add, Text, xm ym+160 w300 h40 vIpInfo, IP: ...
+    Gui, ResPopup:Add, ListBox, xm w300 h80 vHistory
+
+    Gui, ResPopup:Add, DropDownList, xm+310 ym w110 vProvider gSetProvider, OpenRouter|Gemini|Cerebras
+
+    Gui, ResPopup:Show, AutoSize Center
+    UpdateIPInfo()
+    UpdateHistory()
+}
+
+PrevType:
+NextType:
+    return
+
+TypeSelect:
+    return
+
+DoWrite:
+    Gui, ResPopup:Submit, NoHide
+    answer := GuiControlGet("Preview")
+    if !answer
+        return
+    LAST_ANSWER := answer
+    Gui, ResPopup:Hide
+    StartCountdownAndType(answer)
+return
+
+CopyAns:
+    Gui, ResPopup:Submit, NoHide
+    Clipboard := GuiControlGet("Preview")
+    return
+
+ResetCtx:
+    LAST_ANSWER := ""
+    GuiControl,, History, |
+    return
+
+SetProvider:
+    Gui, ResPopup:Submit, NoHide
+    API_PROVIDER := GuiControlGet("Provider")
+    return
+
+;=====================
+; Floating Bubble
+;=====================
+BubbleCreate() {
+    Gui, Bubble:New, +AlwaysOnTop -Caption +ToolWindow +E0x80000, ResBubble
+    Gui, Bubble:Color, 1d1d1d
+    ; icon removed -- original image reference omitted
+    Gui, Bubble:Show, x10 y400 w40 h40
+}
+BubbleMenu:
+    Menu, bubblemenu, Add, OCR Capture, OCRCapture
+    Menu, bubblemenu, Add, Write Last Answer, ShowLastAnswer
+    Menu, bubblemenu, Add, Clear AI Context, ResetCtx
+    Menu, bubblemenu, Add, IP Information, ShowIPInfo
+    Menu, bubblemenu, Show
+return
+
+ShowLastAnswer:
+    if (!LAST_ANSWER) {
+        MsgBox, No answer stored.
+        return
+    }
+    Gui, LastAns:New, +AlwaysOnTop, Last Answer
+    Gui, LastAns:Add, Edit, w300 h120 vLastBox +ReadOnly, %LAST_ANSWER%
+    Gui, LastAns:Add, Button, xm+20 gLAStart w120, Start Typing
+    Gui, LastAns:Add, Button, x+10 gLAManual w120, Manual Entry
+    Gui, LastAns:Show
+return
+
+LAStart:
+    Gui, LastAns:Submit
+    Gui, LastAns:Hide
+    StartCountdownAndType(LAST_ANSWER)
+return
+
+LAManual:
+    Clipboard := LAST_ANSWER
+    Gui, LastAns:Destroy
+return
+
+ShowIPInfo:
+    UpdateIPInfo(true)
+return
+
+;=====================
+; Selection Button
+;=====================
+#If, GetSelectedText() != ""
+~LButton Up::
+    text := GetSelectedText()
+    if (text="")
+        return
+    showGenButton()
+return
+#If
+
+showGenButton() {
+    MouseGetPos, mx, my
+    Gui, SelBtn:New, +ToolWindow -Caption +AlwaysOnTop, GenBtn
+    Gui, SelBtn:Color, 1d1d1d
+    Gui, SelBtn:Add, Button, gGenerateAnswer, Generate
+    Gui, SelBtn:Show, x%mx% y%my%
+}
+
+GenerateAnswer:
+    Gui, SelBtn:Hide
+    question := GetSelectedText()
+    answer := CallAI(question)
+    LAST_ANSWER := answer
+    ShowRainbow(question, answer)
+return
+
+GetSelectedText() {
+    ClipSaved := ClipboardAll
+    Clipboard := ""
+    Send ^c
+    ClipWait 0.5
+    text := Clipboard
+    Clipboard := ClipSaved
+    return text
+}
+
+;=====================
+; Rainbow Modal
+;=====================
+ShowRainbow(question, answer) {
+    Gui, Rainbow:New, +AlwaysOnTop -Caption +Border, RainbowModal
+    Gui, Rainbow:Color, 1d1d1d
+    Gui, Rainbow:Font, cFFFFFF, Segoe UI
+    Gui, Rainbow:Add, Text, w360 h40 vQBox, %question%
+    Gui, Rainbow:Add, Edit, w360 h120 vABox +ReadOnly, %answer%
+    Gui, Rainbow:Add, Button, gRBWrite w90, Write Here
+    Gui, Rainbow:Add, Button, x+10 gRBCopy w90, Copy
+    Gui, Rainbow:Show, AutoSize Center
+}
+
+RBWrite:
+    Gui, Rainbow:Submit
+    Gui, Rainbow:Destroy
+    StartCountdownAndType(LAST_ANSWER)
+return
+
+RBCopy:
+    Clipboard := LAST_ANSWER
+    Gui, Rainbow:Destroy
+return
+
+;=====================
+; Countdown Typing
+;=====================
+StartCountdownAndType(text) {
+    WinGet, winID, ID, A
+    Gui, Count:New, +AlwaysOnTop -Caption +ToolWindow, Countdown
+    Gui, Count:Color, 1d1d1d
+    Gui, Count:Add, Text, w100 h40 vTimerBox center cFFFFFF s20, 3
+    Gui, Count:Show, xCenter yCenter
+    Loop 3 {
+        Sleep 1000
+        GuiControl,, TimerBox, % 3-A_Index
+    }
+    Gui, Count:Destroy
+    WinActivate, ahk_id %winID%
+    SendInputSlow(text)
+}
+
+SendInputSlow(text) {
+    Loop, parse, text
+    {
+        Send %A_LoopField%
+        Sleep 80
+    }
+}
+
+;=====================
+; IP Information
+;=====================
+UpdateIPInfo(showMsg:=false) {
+    info := GetIPInfo()
+    GuiControl,, IpInfo, % "IP: " info.ip " | " info.country " - " info.city " - " info.isp
+    if (showMsg)
+        MsgBox, % "IP: " info.ip "`nCountry: " info.country "`nCity: " info.city "`nISP: " info.isp
+}
+
+GetIPInfo() {
+    urls := ["http://ip-api.com/json","https://ipinfo.io/json","https://ipapi.co/json","https://api.ipify.org?format=json"]
+    info := {ip:"",country:"",city:"",isp:""}
+    for _,url in urls {
+        try {
+            body := HttpGet(url)
+            json := JSON_Load(body)
+            if (url = urls[1] || url = urls[2] || url = urls[3]) {
+                info.ip := json.ip
+                info.country := json.country
+                info.city := json.city
+                info.isp := json.org ? json.org : json.isp
+            } else if (url = urls[0]) {
+                info.ip := json.query
+                info.country := json.country
+                info.city := json.city
+                info.isp := json.isp
+            }
+            if (info.country)
+                break
+        } catch e {
+            continue
+        }
+    }
+    return info
+}
+
+HttpGet(url) {
+    http := ComObjCreate("WinHttp.WinHttpRequest.5.1")
+    http.Open("GET", url, false)
+    http.Send()
+    return http.ResponseText
+}
+
+;=====================
+; AI Integrations
+;=====================
+CallAI(prompt) {
+    global API_PROVIDER
+    if (API_PROVIDER = "OpenRouter")
+        return CallOpenRouter(prompt)
+    else if (API_PROVIDER = "Gemini")
+        return CallGemini(prompt)
+    else if (API_PROVIDER = "Cerebras")
+        return CallCerebras(prompt)
+    else
+        return "No provider"
+}
+
+CallOpenRouter(prompt) {
+    global OPENROUTER_KEY
+    url := "https://openrouter.ai/api/v1/chat/completions"
+    body := {"model":"gpt-3.5-turbo","messages":[{"role":"user","content":prompt}]}
+    return PostJSON(url, body, OPENROUTER_KEY)
+}
+
+CallGemini(prompt) {
+    global GEMINI_KEY
+    url := "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=" GEMINI_KEY
+    body := {"contents":[{"parts":[{"text":prompt}]}]}
+    return PostJSON(url, body)
+}
+
+CallCerebras(prompt) {
+    global CEREBRAS_KEY
+    url := "https://api.cerebras.ai/v1/chat/completions"
+    body := {"model":"gpt-oss-120b","messages":[{"role":"user","content":prompt}]}
+    return PostJSON(url, body, CEREBRAS_KEY)
+}
+
+PostJSON(url, body, token:="") {
+    http := ComObjCreate("WinHttp.WinHttpRequest.5.1")
+    http.Open("POST", url, false)
+    http.SetRequestHeader("Content-Type","application/json")
+    if (token)
+        http.SetRequestHeader("Authorization","Bearer " token)
+    http.Send(JSON_Save(body))
+    resp := http.ResponseText
+    json := JSON_Load(resp)
+    if (json.choices && json.choices[1].message.content)
+        return json.choices[1].message.content
+    if (json.candidates && json.candidates[1].content.parts[1].text)
+        return json.candidates[1].content.parts[1].text
+    return resp
+}
+
+;=====================
+; Utility JSON
+;=====================
+JSON_Load(str) {
+    sc := ComObjCreate("ScriptControl")
+    sc.Language := "JScript"
+    return sc.Eval("(" str ")")
+}
+
+JSON_Save(obj) {
+    sc := ComObjCreate("ScriptControl")
+    sc.Language := "JScript"
+    sc.ExecuteStatement("var o = " obj)
+    return sc.Eval("JSON.stringify(o)")
+}
+
+;=====================
+; Initialization
+;=====================
+BubbleCreate()
+return
+

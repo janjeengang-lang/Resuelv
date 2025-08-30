@@ -1,0 +1,20 @@
+تشغيل سكربت ResuelvSurveyHelper:
+
+1. ضع ملف ResuelvSurveyHelper.txt وملف الإعدادات `ResuelvSurveyHelper.ini` في نفس المجلد.
+2. افتح الملف `.ini` وأدخل مفاتيح الـAPI لمزود الخدمة الذي تفضله (OpenRouter, Google Gemini, Cerebras, OCR.space).
+3. لتحويل الملف إلى سكربت قابل للتشغيل، غيّر امتداده إلى `ResuelvSurveyHelper.ahk` ثم اضغط عليه مرتين.
+4. استخدم الاختصار `Ctrl+Shift+P` لفتح النافذة الرئيسية:
+   - اختر نوع السؤال من الأزرار.
+   - اضغط "Generate" لإنتاج الإجابة.
+   - استخدم "Write Here" لكتابة الإجابة بعد عدّاد ٣ ثوانٍ في الحقل المحدد.
+   - زر "Copy" لنسخ الإجابة.
+   - زر "Reset Context" لمسح ذاكرة المحادثة.
+5. تظهر أيقونة عائمة في الصفحات تحتوي على خيارات:
+   - OCR Capture
+   - Write Last Answer
+   - Clear AI Context
+   - IP Information
+6. عند تحديد نص في أي صفحة، يظهر زر صغير "Generate Answer" بجانبه لإنتاج الإجابة مباشرة.
+7. للحصول على معلومات الشبكة، تجرّب الإضافة أكثر من خدمة (ipapi, ipinfo, ip-api) وتعرض IP والدولة والمدينة ومزوّد الخدمة.
+
+استمتع باستخدام السكربت!

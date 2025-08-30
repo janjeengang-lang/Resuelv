@@ -22,7 +22,7 @@ const btnMap = {
 
 // Navigation state
 let currentPage = 0;
-const buttonsPerPage = 5;
+const buttonsPerPage = 3;
 const allButtons = ['btnOpen', 'btnMCQ', 'btnScale', 'btnYesNo', 'btnAuto', 'btnOCR', 'btnTranslate'];
 
 function updateButtonVisibility() {
@@ -110,6 +110,7 @@ async function handleMode(mode){
     if (!gen?.ok) throw new Error(gen?.error||'Generate failed');
     const answer = postProcess(mode, gen.result);
     els.preview.value = answer;
+    await chrome.storage.local.set({ lastAnswer: answer });
     await saveContext({ q: questionText, a: answer });
     renderHistory(await getContext());
     notify('Ready');
@@ -162,15 +163,15 @@ async function loadIP(){
   try {
     const r = await chrome.runtime.sendMessage({ type:'GET_PUBLIC_IP' });
     if(!r?.ok) throw new Error(r?.error||'IP error');
-    const { ip, country, city, postal, isp, timezone } = r.info;
+    const { ip, country, city, postal, isp, timezone } = r.info || {};
     els.ipInfoText.innerHTML = `
       <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
-        <strong>IP:</strong> ${ip}
-        <button onclick="navigator.clipboard.writeText('${ip}')" style="background: #22c55e; border: none; color: white; padding: 2px 6px; border-radius: 3px; font-size: 10px; cursor: pointer;">Copy</button>
+        <strong>IP:</strong> ${ip || 'Unknown'}
+        <button onclick="navigator.clipboard.writeText('${ip || ''}')" style="background: #22c55e; border: none; color: white; padding: 2px 6px; border-radius: 3px; font-size: 10px; cursor: pointer;">Copy</button>
       </div>
-      <div><strong>Location:</strong> ${city}, ${country}</div>
-      <div><strong>Postal:</strong> ${postal} | <strong>ISP:</strong> ${isp}</div>
-      <div><strong>Timezone:</strong> ${timezone}</div>
+      <div><strong>Location:</strong> ${city || 'Unknown'}, ${country || 'Unknown'}</div>
+      <div><strong>Postal:</strong> ${postal || 'Unknown'} | <strong>ISP:</strong> ${isp || 'Unknown'}</div>
+      <div><strong>Timezone:</strong> ${timezone || 'Unknown'}</div>
     `;
   }
   catch(e){
