@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Decisión de Conexión</title>
+    <style>
+        body { font-family: Arial; background: #23272b; color: #fff; margin: 0; padding: 20px; }
+        .url-input { width: 100%; padding: 6px; font-size: 1rem; margin-bottom: 12px; border-radius: 4px; border: 1px solid #444; background: #181c20; color: #fff; }
+        .btn { padding: 8px 18px; border: none; border-radius: 5px; font-weight: bold; margin-right: 10px; cursor: pointer; }
+        .block { background: #e53935; color: #fff; }
+        .approve { background: #43a047; color: #fff; }
+    </style>
+</head>
+<body>
+    <h2>¿Bloquear o aprobar esta conexión?</h2>
+    <label>URL (puedes editarla):</label>
+    <input type="text" id="urlInput" class="url-input">
+    <div>
+        <button class="btn block" id="blockBtn">Bloquear</button>
+        <button class="btn approve" id="approveBtn">Aprobar</button>
+    </div>
+    <script src="decision.js"></script>
+</body>
+</html>

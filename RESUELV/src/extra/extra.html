@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Extras</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/png" sizes="32x32" href="../../icons/icon32.png">
+  <link rel="stylesheet" href="extra.css">
+  <link rel="stylesheet" href="../menu/menu.css">
+</head>
+
+<body>
+
+  <div id="menu-bar-global"></div>
+  <button id="menu-toggle-btn" class="menu-toggle-btn" aria-label="Abrir menú">&#9776;</button>
+
+  <div id="logo-dinamico"></div>
+
+  <div id="extra-root">
+    <div class="container extra-container">
+      <h2 class="extra-title">✨ Extras</h2>
+      <div class="extra-section">
+        <!-- Generador de identidades -->
+        <div class="extra-group" id="generador-identidad">
+          <span class="extra-icon">🆔</span>
+          <div class="extra-info extra-info-flex">
+            <div>
+              <div class="extra-title-item" data-i18n="generador-de-identidades">generador-de-identidades</div>
+              <div class="extra-desc" data-i18n="crea-identidades-falsas-para-pruebas-y-formularios">crea-identidades-falsas-para-pruebas-y-formularios</div>
+            </div>
+            <button id="btn-generar-identidad" class="btn-generar-compact" title="Generar identidad">🧑‍🤝‍🧑</button>
+          </div>
+          <div id="opciones-genero" style="display:none; gap:8px; margin-top:8px;">
+            <button class="btn-genero" data-genero="hombre">♂️</button>
+            <button class="btn-genero" data-genero="mujer">♀️</button>
+          </div>
+          <div id="identidad-generada" style="display:none; margin-top:10px;">
+            <div><b data-i18n="nombre">nombre</b> <span id="nombre-generado"></span></div>
+            <div><b data-i18n="apellido">apellido</b> <span id="apellido-generado"></span></div>
+            <div><b data-i18n="correos">correos</b>
+              <div id="correos-generados"></div>
+            </div>
+            <div style="margin-top:10px; display:flex; gap:8px;">
+              <button id="btn-guardar-identidad" class="btn-guardar" title="Guardar">💾</button>
+              <button id="btn-otra-identidad" class="btn-generar-compact" title="Generar otra">🔄</button>
+            </div>
+          </div>
+        </div>
+        <!-- Otros extras -->
+        <div class="extra-group">
+          <span class="extra-icon">📧</span>
+          <div class="extra-info">
+            <div class="extra-title-item" data-i18n="compra-de-gmail">compra-de-gmail</div>
+            <div class="extra-desc" data-i18n="adquiere-cuentas-gmail-listas-para-usar">adquiere-cuentas-gmail-listas-para-usar</div>
+          </div>
+          <span class="badge-prox" data-i18n="proximamente">proximamente</span>
+        </div>
+        <div class="extra-group">
+          <span class="extra-icon">📚</span>
+          <div class="extra-info">
+            <div class="extra-title-item" data-i18n="metodos" >metodos</div>
+            <div class="extra-desc" data-i18n="accede-a-metodos-y-tutoriales-exclusivos">accede-a-metodos-y-tutoriales-exclusivos</div>
+          </div>
+          <span class="badge-prox" data-i18n="proximamente">Próximamente</span>
+        </div>
+        <div class="extra-group">
+          <span class="extra-icon">🎁</span>
+          <div class="extra-info">
+            <div class="extra-title-item" data-i18n="venta-compra-de-giftcards">venta-compra-de-giftcards</div>
+            <div class="extra-desc" data-i18n="compra-tarjetas-de-regalo-de-diferentes-servicios">compra-tarjetas-de-regalo-de-diferentes-servicios</div>
+          </div>
+          <span class="badge-prox" data-i18n="proximamente">Próximamente</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="../locales/i18n.js"></script>
+  <script src="../menu/menu.js"></script>
+  <script src="extra.js"></script>
+</body>
+
+</html>
