@@ -9,6 +9,7 @@
 INI_FILE := A_ScriptDir "\ResuelvSurveyHelper.ini"
 LAST_ANSWER := ""
 API_PROVIDER := "OpenRouter" ; default provider
+HISTORY := []
 
 ; Load API keys from INI
 if FileExist(INI_FILE) {
@@ -69,27 +70,27 @@ TypeSelect:
 
 DoWrite:
     Gui, ResPopup:Submit, NoHide
-    answer := GuiControlGet("Preview")
-    if !answer
+    if (Preview = "")
         return
-    LAST_ANSWER := answer
+    LAST_ANSWER := Preview
     Gui, ResPopup:Hide
-    StartCountdownAndType(answer)
+    StartCountdownAndType(Preview)
 return
 
 CopyAns:
     Gui, ResPopup:Submit, NoHide
-    Clipboard := GuiControlGet("Preview")
+    Clipboard := Preview
     return
 
 ResetCtx:
     LAST_ANSWER := ""
-    GuiControl,, History, |
+    HISTORY := []
+    GuiControl, ResPopup:, History, |
     return
 
 SetProvider:
     Gui, ResPopup:Submit, NoHide
-    API_PROVIDER := GuiControlGet("Provider")
+    API_PROVIDER := Provider
     return
 
 ;=====================
@@ -136,6 +137,10 @@ ShowIPInfo:
     UpdateIPInfo(true)
 return
 
+OCRCapture:
+    MsgBox, OCR capture not implemented.
+return
+
 ;=====================
 ; Selection Button
 ;=====================
@@ -161,6 +166,7 @@ GenerateAnswer:
     question := GetSelectedText()
     answer := CallAI(question)
     LAST_ANSWER := answer
+    AddHistory(question, answer)
     ShowRainbow(question, answer)
 return
 
@@ -172,6 +178,27 @@ GetSelectedText() {
     text := Clipboard
     Clipboard := ClipSaved
     return text
+}
+
+;=====================
+; History Helpers
+;=====================
+AddHistory(question, answer) {
+    global HISTORY
+    entry := question " => " answer
+    HISTORY.Push(entry)
+    if (HISTORY.Length() > 5)
+        HISTORY.RemoveAt(1)
+    UpdateHistory()
+}
+
+UpdateHistory() {
+    global HISTORY
+    list := ""
+    for _, item in HISTORY
+        list .= item "|"
+    if WinExist("Resuelv Popup")
+        GuiControl, ResPopup:, History, % list
 }
 
 ;=====================
