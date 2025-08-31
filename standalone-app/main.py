@@ -1,9 +1,12 @@
+import os
 import sys
+import tempfile
 import time
 from typing import List
 
-from PyQt5.QtCore import Qt, QTimer, QPoint
-from PyQt5.QtGui import QCursor
+import keyboard
+from PyQt5.QtCore import Qt, QTimer, QPoint, QRect
+from PyQt5.QtGui import QCursor, QPainter, QColor
 from PyQt5.QtWidgets import (
     QApplication,
     QComboBox,
@@ -114,6 +117,41 @@ class LastAnswerWindow(QDialog):
         self.close()
 
 
+class ScreenGrabber(QDialog):
+    """Fullscreen overlay that lets the user select a region for OCR."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.setWindowState(Qt.WindowFullScreen)
+        self.begin = QPoint()
+        self.end = QPoint()
+        self.background = QApplication.primaryScreen().grabWindow(0)
+
+    def paintEvent(self, event):  # pragma: no cover - UI painting
+        painter = QPainter(self)
+        painter.drawPixmap(0, 0, self.background)
+        if not self.begin.isNull() and not self.end.isNull():
+            painter.setPen(QColor(255, 0, 0))
+            painter.drawRect(QRect(self.begin, self.end))
+
+    def mousePressEvent(self, event):  # pragma: no cover
+        self.begin = self.end = event.pos()
+        self.update()
+
+    def mouseMoveEvent(self, event):  # pragma: no cover
+        self.end = event.pos()
+        self.update()
+
+    def mouseReleaseEvent(self, event):  # pragma: no cover
+        self.end = event.pos()
+        self.accept()
+
+    def selected_pixmap(self):
+        rect = QRect(self.begin, self.end).normalized()
+        return self.background.copy(rect)
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -183,6 +221,11 @@ class MainWindow(QMainWindow):
 
         self.fetch_ip()
 
+        # Global hotkey to generate answer from current clipboard text
+        keyboard.add_hotkey(
+            "ctrl+shift+g", lambda: QTimer.singleShot(0, self.generate_from_clipboard)
+        )
+
     def fetch_ip(self):
         info = ip_utils.fetch_ip_info()
         self.ip_label.setText(
@@ -208,8 +251,17 @@ class MainWindow(QMainWindow):
         dlg.exec_()
 
     def ocr_capture(self):
-        # Placeholder for OCR capture logic
-        pass
+        grabber = ScreenGrabber(self)
+        if grabber.exec_() == QDialog.Accepted:
+            pixmap = grabber.selected_pixmap()
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+            tmp_path = tmp.name
+            tmp.close()
+            pixmap.save(tmp_path)
+            text = providers.ocr_image(tmp_path)
+            os.unlink(tmp_path)
+            if text:
+                self.generate_answer_for_text(text)
 
     def show_generate_btn(self):
         cursor = self.preview.textCursor()
@@ -222,6 +274,16 @@ class MainWindow(QMainWindow):
 
     def generate_answer(self):
         text = self.preview.textCursor().selectedText()
+        self.generate_answer_for_text(text)
+
+    def generate_from_clipboard(self):
+        text = QApplication.clipboard().text().strip()
+        if text:
+            self.generate_answer_for_text(text)
+
+    def generate_answer_for_text(self, text: str):
+        if not text:
+            return
         provider = self.provider_box.currentText()
         answer = providers.generate(text, provider)
         self.last_answer = answer
