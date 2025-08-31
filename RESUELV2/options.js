@@ -12,9 +12,20 @@ const els = {
   save: document.getElementById('save'),
   clear: document.getElementById('clear'),
   status: document.getElementById('status'),
+  promptForm: document.getElementById('promptForm'),
+  promptName: document.getElementById('promptName'),
+  promptTags: document.getElementById('promptTags'),
+  promptHotkey: document.getElementById('promptHotkey'),
+  promptText: document.getElementById('promptText'),
+  savePrompt: document.getElementById('savePrompt'),
+  cancelPrompt: document.getElementById('cancelPrompt'),
+  promptTable: document.getElementById('promptTable')?.querySelector('tbody'),
 };
 
-function notify(msg, isErr=false){ els.status.textContent = msg; els.status.className = 'status' + (isErr?' error':''); }
+function notify(msg, isErr=false){
+  els.status.textContent = msg;
+  els.status.className = 'status' + (isErr ? ' error' : '');
+}
 
 async function load(){
   try {
@@ -27,12 +38,78 @@ async function load(){
     els.ocrKey.value = s.ocrApiKey || '';
     els.typingSpeed.value = s.typingSpeed || 'normal';
     els.ocrLang.value = s.ocrLang || 'eng';
+    await loadPrompts();
     console.log('Settings loaded successfully');
   } catch (e) {
     console.error('Error loading settings:', e);
     notify('Error loading settings: ' + e.message, true);
   }
 }
+
+let editingId = null;
+
+async function loadPrompts(){
+  const { customPrompts = [] } = await chrome.storage.sync.get('customPrompts');
+  renderPromptTable(customPrompts);
+}
+
+function renderPromptTable(list){
+  if(!els.promptTable) return;
+  els.promptTable.innerHTML = '';
+  for(const p of list){
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${p.name}</td><td>${(p.tags||[]).join(', ')}</td><td>${p.hotkey||''}</td>` +
+      `<td><button class="btn small" data-edit="${p.id}">Edit</button> ` +
+      `<button class="btn small warn" data-del="${p.id}">Delete</button></td>`;
+    els.promptTable.appendChild(tr);
+  }
+  els.promptTable.querySelectorAll('button[data-edit]').forEach(btn=>btn.addEventListener('click', async e=>{
+    const id = e.target.getAttribute('data-edit');
+    const { customPrompts = [] } = await chrome.storage.sync.get('customPrompts');
+    const pr = customPrompts.find(x=>x.id===id);
+    if(!pr) return;
+    els.promptName.value = pr.name;
+    els.promptTags.value = (pr.tags||[]).join(', ');
+    els.promptHotkey.value = pr.hotkey || '';
+    els.promptText.value = pr.text;
+    editingId = id;
+  }));
+  els.promptTable.querySelectorAll('button[data-del]').forEach(btn=>btn.addEventListener('click', async e=>{
+    const id = e.target.getAttribute('data-del');
+    const { customPrompts = [] } = await chrome.storage.sync.get('customPrompts');
+    const list = customPrompts.filter(p=>p.id!==id);
+    await chrome.storage.sync.set({ customPrompts: list });
+    loadPrompts();
+  }));
+}
+
+function resetPromptForm(){
+  els.promptName.value = '';
+  els.promptTags.value = '';
+  els.promptHotkey.value = '';
+  els.promptText.value = '';
+  editingId = null;
+}
+
+els.cancelPrompt?.addEventListener('click', resetPromptForm);
+
+els.savePrompt?.addEventListener('click', async () => {
+  const name = els.promptName.value.trim();
+  const text = els.promptText.value.trim();
+  if(!name || !text){ notify('Name and prompt required', true); return; }
+  const tags = els.promptTags.value.split(',').map(t=>t.trim()).filter(Boolean);
+  const hotkey = els.promptHotkey.value.trim();
+  const { customPrompts = [] } = await chrome.storage.sync.get('customPrompts');
+  if(editingId){
+    const idx = customPrompts.findIndex(p=>p.id===editingId);
+    if(idx>=0) customPrompts[idx] = { ...customPrompts[idx], name, text, tags, hotkey };
+  } else {
+    customPrompts.push({ id: Date.now().toString(), name, text, tags, hotkey });
+  }
+  await chrome.storage.sync.set({ customPrompts });
+  resetPromptForm();
+  loadPrompts();
+});
 
 els.save.addEventListener('click', async () => {
   try {
@@ -71,4 +148,3 @@ els.test.addEventListener('click', async () => {
 });
 
 load();
-

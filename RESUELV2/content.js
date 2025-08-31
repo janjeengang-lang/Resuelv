@@ -18,6 +18,25 @@
     lastFocused: null
   };
 
+  let customPrompts = [];
+  chrome.storage.sync.get('customPrompts', r => { customPrompts = r.customPrompts || []; });
+  chrome.storage.onChanged.addListener((chg, area) => {
+    if(area === 'sync' && chg.customPrompts){ customPrompts = chg.customPrompts.newValue || []; }
+  });
+
+  document.addEventListener('keydown', e => {
+    const combo = (e.ctrlKey?'Ctrl+':'') + (e.altKey?'Alt+':'') + (e.shiftKey?'Shift+':'') + e.key.toUpperCase();
+    const pr = customPrompts.find(p => p.hotkey && p.hotkey.toUpperCase() === combo);
+    if(pr){
+      const text = window.getSelection().toString();
+      if(!text) return;
+      chrome.runtime.sendMessage({ type:'RUN_CUSTOM_PROMPT', id: pr.id, text }, res => {
+        if(res?.ok) alert(res.result); else if(res?.error) alert(res.error);
+      });
+      e.preventDefault();
+    }
+  });
+
   document.addEventListener('focusin', (e) => { STATE.lastFocused = e.target; });
 
   // Create floating bubble
@@ -651,6 +670,7 @@
           <div class="modal-actions" style="display: none;">
             <button class="btn-write-here">Write Here</button>
             <button class="btn-copy">Copy</button>
+            <button class="btn-use-prompt">Use Custom Prompt</button>
           </div>
         </div>
       </div>
@@ -799,6 +819,11 @@
       .btn-write-here {
         background: linear-gradient(45deg, #4ecdc4, #44a08d) !important;
       }
+
+      .btn-use-prompt {
+        background: linear-gradient(45deg, #ffd600, #ff9800) !important;
+        color: #181c20 !important;
+      }
     `;
 
     document.head.appendChild(style);
@@ -848,16 +873,83 @@
           navigator.clipboard.writeText(answer);
           showNotification('Answer copied to clipboard!');
         });
+
+        modal.querySelector('.btn-use-prompt').addEventListener('click', () => {
+          openPromptSelector(questionText);
+        });
       }
-      
+
       // Save context
-      await saveContext({ q: questionText, a: answer });
+      await saveContext({ q: questionText, a: answer, promptName: 'auto' });
       
     } catch (e) {
       if (STATE.modal) {
         STATE.modal.querySelector('.loading').textContent = 'Error: ' + (e.message || 'Failed to generate answer');
       }
     }
+  }
+
+  async function openPromptSelector(questionText){
+    const { customPrompts=[] } = await chrome.storage.sync.get('customPrompts');
+    if(!customPrompts.length){ showNotification('No custom prompts'); return; }
+    const content = `
+      <input id="prFilter" placeholder="Filter by tag" style="margin-bottom:10px;padding:8px 12px;border-radius:6px;border:1px solid #334155;background:#0b1220;color:#e2e8f0;width:100%;"/>
+      <div id="prList"></div>
+      <div class="pr-actions" style="display:flex;justify-content:flex-end;gap:10px;margin-top:15px;">
+        <button id="prRun" class="btn primary">Generate</button>
+        <button id="prCancel" class="btn">Cancel</button>
+      </div>`;
+    const modal = createStyledModal('Custom Prompts', content, null);
+    const style = document.createElement('style');
+    style.textContent = `#prList{max-height:200px;overflow:auto;} .pr-item{padding:8px 12px;border:1px solid #334155;border-radius:6px;margin-bottom:8px;cursor:pointer;} .pr-item.selected{border-color:#ffd600;background:rgba(255,214,0,0.1);} .btn{background:#1f2937;border:1px solid #334155;color:#e2e8f0;border-radius:6px;padding:8px 16px;cursor:pointer;transition:filter .2s;} .btn:hover{filter:brightness(1.1);} .btn.primary{background:#22c55e;border-color:#22c55e;color:#0b1215;font-weight:600;}`;
+    modal.appendChild(style);
+    const listEl = modal.querySelector('#prList');
+    let filtered=[...customPrompts]; let selectedId=null;
+    function render(){
+      listEl.innerHTML = filtered.map(p=>`<div class="pr-item" data-id="${p.id}">${p.name}</div>`).join('');
+      listEl.querySelectorAll('.pr-item').forEach(it=>{
+        it.addEventListener('click',()=>{
+          selectedId = it.dataset.id;
+          listEl.querySelectorAll('.pr-item').forEach(x=>x.classList.remove('selected'));
+          it.classList.add('selected');
+        });
+      });
+    }
+    render();
+    modal.querySelector('#prFilter').addEventListener('input', e=>{
+      const tag=e.target.value.trim();
+      filtered = customPrompts.filter(p=>!tag || (p.tags||[]).includes(tag));
+      selectedId=null; render();
+    });
+    modal.querySelector('#prCancel').addEventListener('click',()=>modal.remove());
+    modal.querySelector('#prRun').addEventListener('click', async ()=>{
+      const pr = customPrompts.find(p=>p.id===selectedId);
+      if(!pr){ showNotification('Select a prompt'); return; }
+      modal.remove();
+      if(STATE.modal){
+        const loadEl = STATE.modal.querySelector('.loading');
+        const ansEl = STATE.modal.querySelector('.answer-text');
+        const act = STATE.modal.querySelector('.modal-actions');
+        loadEl.style.display='block'; loadEl.textContent='Generating answer...';
+        ansEl.style.display='none'; act.style.display='none';
+      }
+      try{
+        const resp = await chrome.runtime.sendMessage({ type:'RUN_CUSTOM_PROMPT', id: pr.id, text: questionText });
+        if(!resp?.ok) throw new Error(resp.error||'Failed');
+        const answer = resp.result.trim();
+        STATE.currentAnswer = answer;
+        if(STATE.modal){
+          const ansEl = STATE.modal.querySelector('.answer-text');
+          ansEl.textContent = answer; ansEl.style.display='block';
+          STATE.modal.querySelector('.modal-actions').style.display='flex';
+          STATE.modal.querySelector('.loading').style.display='none';
+        }
+        await chrome.storage.local.set({ lastAnswer: answer, lastCustomPromptId: pr.id });
+        await saveContext({ q: questionText, a: answer, promptName: resp.promptName || pr.name });
+      }catch(e){
+        if(STATE.modal) STATE.modal.querySelector('.loading').textContent = 'Error: '+e.message;
+      }
+    });
   }
 
   function closeModal() {
