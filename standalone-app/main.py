@@ -5,6 +5,7 @@ import time
 from typing import List
 
 import keyboard
+import configparser
 from PyQt5.QtCore import Qt, QTimer, QPoint, QRect
 from PyQt5.QtGui import QCursor, QPainter, QColor
 from PyQt5.QtWidgets import (
@@ -27,6 +28,10 @@ from PyQt5.QtWidgets import (
 
 import ip_utils
 import providers
+
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.ini")
+CONFIG = configparser.ConfigParser()
+CONFIG.read(CONFIG_PATH)
 
 
 class CountdownDialog(QDialog):
@@ -117,6 +122,38 @@ class LastAnswerWindow(QDialog):
         self.close()
 
 
+class APIKeyDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("API Keys")
+        layout = QVBoxLayout(self)
+        self.edits = {}
+        for section, label in [
+            ("openrouter", "OpenRouter"),
+            ("gemini", "Gemini"),
+            ("cerebras", "Cerebras"),
+            ("ocrspace", "OCR.space"),
+        ]:
+            layout.addWidget(QLabel(label))
+            line = QLineEdit(CONFIG.get(section, "api_key", fallback=""))
+            line.setEchoMode(QLineEdit.Password)
+            layout.addWidget(line)
+            self.edits[section] = line
+        btn_save = QPushButton("Save")
+        layout.addWidget(btn_save)
+        btn_save.clicked.connect(self.save)
+
+    def save(self):
+        for section, edit in self.edits.items():
+            if not CONFIG.has_section(section):
+                CONFIG.add_section(section)
+            CONFIG.set(section, "api_key", edit.text().strip())
+        with open(CONFIG_PATH, "w") as f:
+            CONFIG.write(f)
+        providers.CONFIG.read(CONFIG_PATH)
+        self.accept()
+
+
 class ScreenGrabber(QDialog):
     """Fullscreen overlay that lets the user select a region for OCR."""
 
@@ -156,7 +193,16 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Standalone App")
-        self.setStyleSheet("background:#222; color:#eee;")
+        self.setStyleSheet(
+            """
+            QWidget { background-color: #1e1e1e; color: #f8f8f2; }
+            QPushButton { background-color: #3c3f41; border: 1px solid #5c5f61; padding: 4px; border-radius: 4px; }
+            QPushButton:hover { background-color: #4e5255; }
+            QPlainTextEdit, QListWidget, QLineEdit { background-color: #2b2b2b; border: 1px solid #5c5f61; }
+            QComboBox { background-color: #2b2b2b; border: 1px solid #5c5f61; }
+            QMenu { background-color: #2b2b2b; color: #f8f8f2; }
+            """
+        )
         central = QWidget()
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
@@ -191,6 +237,10 @@ class MainWindow(QMainWindow):
         self.provider_box = QComboBox()
         self.provider_box.addItems(["OpenRouter", "Gemini", "Cerebras"])
         layout.addWidget(self.provider_box)
+
+        self.api_btn = QPushButton("API Keys")
+        layout.addWidget(self.api_btn)
+        self.api_btn.clicked.connect(self.edit_api_keys)
 
         self.ip_label = QLabel("IP: ...")
         layout.addWidget(self.ip_label)
@@ -248,6 +298,10 @@ class MainWindow(QMainWindow):
         if not self.last_answer:
             return
         dlg = LastAnswerWindow(self.last_answer, self)
+        dlg.exec_()
+
+    def edit_api_keys(self):
+        dlg = APIKeyDialog(self)
         dlg.exec_()
 
     def ocr_capture(self):
