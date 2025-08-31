@@ -216,6 +216,36 @@
       </label>
     </div>
 
+    <div class="group">
+      <div class="subtitle">Custom Prompts</div>
+      <form id="promptForm">
+        <label class="row">
+          <span>Name</span>
+          <input id="promptName" type="text" />
+        </label>
+        <label class="row">
+          <span>Tags</span>
+          <input id="promptTags" type="text" placeholder="comma,separated" />
+        </label>
+        <label class="row">
+          <span>Hotkey</span>
+          <input id="promptHotkey" type="text" placeholder="Ctrl+Shift+1" />
+        </label>
+        <label class="row">
+          <span>Prompt</span>
+          <textarea id="promptText" rows="3"></textarea>
+        </label>
+        <div class="row end">
+          <button id="savePrompt" type="button" class="btn primary">Save</button>
+          <button id="cancelPrompt" type="button" class="btn">Cancel</button>
+        </div>
+      </form>
+      <table id="promptTable" style="width:100%; margin-top:10px; border-collapse:collapse;">
+        <thead><tr><th>Name</th><th>Tags</th><th>Hotkey</th><th>Actions</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
     <div class="row end">
       <button id="test" class="btn">Test API</button>
       <button id="save" class="btn primary">Save</button>

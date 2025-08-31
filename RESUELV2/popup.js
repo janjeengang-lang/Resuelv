@@ -7,6 +7,8 @@ const els = {
   openOptions: document.getElementById('openOptions'),
   history: document.getElementById('history'),
   ipInfoText: document.getElementById('ipInfoText'),
+  btnCustomPrompt: document.getElementById('btnCustomPrompt'),
+  btnUseLastPrompt: document.getElementById('btnUseLastPrompt'),
 };
 
 const btnMap = {
@@ -19,6 +21,8 @@ const btnMap = {
   btnTranslate: 'translate',
   btnReset: 'reset'
 };
+
+let lastQuestion = '';
 
 // Navigation state
 let currentPage = 0;
@@ -68,6 +72,7 @@ updateButtonVisibility();
 
 els.openOptions.addEventListener('click', () => chrome.runtime.openOptionsPage());
 
+
 async function handleMode(mode){
   if (mode === 'reset') { await chrome.storage.local.set({ contextQA: [] }); renderHistory([]); return notify('Context cleared'); }
   if (mode === 'ocr') {
@@ -80,22 +85,19 @@ async function handleMode(mode){
       const ocr = await chrome.runtime.sendMessage({ type:'CAPTURE_AND_OCR', rect: rectRes, tabId: tab.id, ocrLang });
       if (!ocr?.ok) throw new Error(ocr?.error||'OCR failed');
       els.preview.value = ocr.text;
+      lastQuestion = ocr.text;
       notify('OCR completed');
     } catch(e){ notify('OCR failed: ' + String(e?.message||e), true); }
     return;
   }
-  if (mode === 'translate') {
-    notify('Translation feature coming soon!');
-    return;
-  }
-  
+  if (mode === 'translate') { notify('Translation feature coming soon!'); return; }
+
   setBusy(true); notify('');
   try {
     const tab = await getActiveTab();
     await ensureContentScript(tab.id);
     let questionText = (await getSelectedOrDomText(tab.id)).trim();
     if (!questionText || questionText.length < 2){
-      // OCR path
       const rectRes = await chrome.tabs.sendMessage(tab.id, { type: 'START_OCR_SELECTION' });
       if (!rectRes?.width || !rectRes?.height) throw new Error('OCR canceled');
       const { ocrLang='eng' } = await chrome.storage.local.get('ocrLang');
@@ -104,6 +106,7 @@ async function handleMode(mode){
       questionText = ocr.text;
       if (!questionText) throw new Error('OCR returned empty text');
     }
+    lastQuestion = questionText;
     const ctx = await getContext();
     const prompt = buildPrompt(mode, questionText, ctx);
     const gen = await chrome.runtime.sendMessage({ type:'GEMINI_GENERATE', prompt });
@@ -111,7 +114,7 @@ async function handleMode(mode){
     const answer = postProcess(mode, gen.result);
     els.preview.value = answer;
     await chrome.storage.local.set({ lastAnswer: answer });
-    await saveContext({ q: questionText, a: answer });
+    await saveContext({ q: questionText, a: answer, promptName: mode });
     renderHistory(await getContext());
     notify('Ready');
   } catch(e){ notify(String(e?.message||e), true); }
@@ -140,6 +143,29 @@ function postProcess(mode, t){
   return s;
 }
 
+async function runCustomPrompt(pr){
+  if(!pr) return;
+  if(!lastQuestion){
+    const tab = await getActiveTab();
+    await ensureContentScript(tab.id);
+    lastQuestion = (await getSelectedOrDomText(tab.id)).trim();
+    if(!lastQuestion){ notify('No text for prompt', true); return; }
+  }
+  setBusy(true); notify('');
+  try {
+    const fullPrompt = pr.text + '\n\n' + lastQuestion;
+    const gen = await chrome.runtime.sendMessage({ type:'GEMINI_GENERATE', prompt: fullPrompt });
+    if (!gen?.ok) throw new Error(gen?.error||'Generate failed');
+    const answer = gen.result.trim();
+    els.preview.value = answer;
+    await chrome.storage.local.set({ lastAnswer: answer, lastCustomPromptId: pr.id });
+    await saveContext({ q: lastQuestion, a: answer, promptName: pr.name });
+    renderHistory(await getContext());
+    notify('Ready');
+  } catch(e){ notify(String(e?.message||e), true); }
+  finally { setBusy(false); }
+}
+
 async function getActiveTab(){ const tabs = await chrome.tabs.query({active:true,currentWindow:true}); return tabs[0]; }
 async function ensureContentScript(tabId){ try{ await chrome.tabs.sendMessage(tabId,{type:'PING'});}catch{ await chrome.scripting.executeScript({target:{tabId}, files:['content.js']}); await chrome.tabs.sendMessage(tabId,{type:'PING'});} }
 async function getSelectedOrDomText(tabId){ const r = await chrome.tabs.sendMessage(tabId,{type:'GET_SELECTED_OR_DOM_TEXT'}); return r?.ok? r.text: ''; }
@@ -157,6 +183,27 @@ els.btnWrite.addEventListener('click', async () => {
     await chrome.tabs.sendMessage(tab.id, { type:'TYPE_TEXT', text: els.preview.value, options: { speed: typingSpeed } });
     notify('Typed');
   } catch(e){ notify('Type failed: '+(e?.message||e), true); }
+});
+
+els.btnCustomPrompt?.addEventListener('click', async () => {
+  const { customPrompts=[] } = await chrome.storage.sync.get('customPrompts');
+  if(!customPrompts.length){ notify('No custom prompts', true); return; }
+  const tag = prompt('Filter by tag (optional)')?.trim();
+  const list = customPrompts.filter(p=>!tag || (p.tags||[]).includes(tag));
+  if(!list.length){ notify('No prompts for tag', true); return; }
+  const choice = prompt('Choose prompt number:\n'+list.map((p,i)=>`${i+1}. ${p.name}`).join('\n'));
+  const idx = parseInt(choice,10)-1;
+  if(isNaN(idx) || idx<0 || idx>=list.length) return;
+  runCustomPrompt(list[idx]);
+});
+
+els.btnUseLastPrompt?.addEventListener('click', async () => {
+  const { lastCustomPromptId } = await chrome.storage.local.get('lastCustomPromptId');
+  if(!lastCustomPromptId){ notify('No last prompt', true); return; }
+  const { customPrompts=[] } = await chrome.storage.sync.get('customPrompts');
+  const pr = customPrompts.find(p=>p.id===lastCustomPromptId);
+  if(!pr){ notify('Prompt missing', true); return; }
+  runCustomPrompt(pr);
 });
 
 async function loadIP(){
@@ -179,7 +226,10 @@ async function loadIP(){
   }
 }
 
-function renderHistory(list){ const items = (list||[]).slice(-5).map(x=>`- ${x.q} → ${x.a}`).join('\n'); els.history.textContent = items || 'No history'; }
+function renderHistory(list){
+  const items = (list||[]).slice(-5).map(x=>`- [${x.promptName||'n/a'}] ${x.q} → ${x.a}`).join('\n');
+  els.history.textContent = items || 'No history';
+}
 
 (async function init(){ renderHistory(await getContext()); loadIP(); })();
 

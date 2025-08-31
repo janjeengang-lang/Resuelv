@@ -18,6 +18,25 @@
     lastFocused: null
   };
 
+  let customPrompts = [];
+  chrome.storage.sync.get('customPrompts', r => { customPrompts = r.customPrompts || []; });
+  chrome.storage.onChanged.addListener((chg, area) => {
+    if(area === 'sync' && chg.customPrompts){ customPrompts = chg.customPrompts.newValue || []; }
+  });
+
+  document.addEventListener('keydown', e => {
+    const combo = (e.ctrlKey?'Ctrl+':'') + (e.altKey?'Alt+':'') + (e.shiftKey?'Shift+':'') + e.key.toUpperCase();
+    const pr = customPrompts.find(p => p.hotkey && p.hotkey.toUpperCase() === combo);
+    if(pr){
+      const text = window.getSelection().toString();
+      if(!text) return;
+      chrome.runtime.sendMessage({ type:'RUN_CUSTOM_PROMPT', id: pr.id, text }, res => {
+        if(res?.ok) alert(res.result); else if(res?.error) alert(res.error);
+      });
+      e.preventDefault();
+    }
+  });
+
   document.addEventListener('focusin', (e) => { STATE.lastFocused = e.target; });
 
   // Create floating bubble
