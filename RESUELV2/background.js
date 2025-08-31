@@ -93,6 +93,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ ok: true, tabId: id });
           break;
         }
+        case 'RUN_CUSTOM_PROMPT': {
+          const { id, text } = message;
+          const { customPrompts = [] } = await chrome.storage.sync.get('customPrompts');
+          const pr = customPrompts.find(p => p.id === id);
+          if (!pr) { sendResponse({ ok: false, error: 'Prompt not found' }); break; }
+          const fullPrompt = pr.text + '\n\n' + text;
+          const result = await callOpenRouter(fullPrompt);
+          sendResponse({ ok: true, result, promptName: pr.name });
+          break;
+        }
         default:
           sendResponse({ ok: false, error: 'Unknown message type' });
       }

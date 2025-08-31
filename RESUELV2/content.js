@@ -18,6 +18,26 @@
     lastFocused: null
   };
 
+  let customPrompts = [];
+  chrome.storage.sync.get('customPrompts', r => { customPrompts = r.customPrompts || []; });
+  chrome.storage.onChanged.addListener((chg, area) => {
+    if(area === 'sync' && chg.customPrompts){ customPrompts = chg.customPrompts.newValue || []; }
+  });
+
+  document.addEventListener('keydown', e => {
+    const combo = (e.ctrlKey ? 'Ctrl+' : '') +
+                  (e.altKey ? 'Alt+' : '') +
+                  (e.shiftKey ? 'Shift+' : '') +
+                  e.key.toUpperCase();
+    const pr = customPrompts.find(p => p.hotkey && p.hotkey.toUpperCase() === combo);
+    if (pr) {
+      const text = window.getSelection().toString().trim();
+      if (!text) return;
+      createRainbowModal(text, pr.id);
+      e.preventDefault();
+    }
+  });
+
   document.addEventListener('focusin', (e) => { STATE.lastFocused = e.target; });
 
   // Create floating bubble
@@ -35,12 +55,10 @@
     
     bubble.style.cssText = `
       position: fixed;
-      top: 20px;
-      right: 20px;
       width: 60px;
       height: 60px;
       z-index: 2147483647;
-      cursor: pointer;
+      cursor: grab;
       border-radius: 50%;
       background: linear-gradient(45deg, #ff6b6b, #4ecdc4, #45b7d1, #96ceb4, #feca57, #ff9ff3, #54a0ff);
       background-size: 400% 400%;
@@ -106,7 +124,55 @@
     document.body.appendChild(bubble);
     STATE.bubble = bubble;
 
-    bubble.addEventListener('click', showBubbleMenu);
+    // Position bubble using stored value or default
+    chrome.storage.local.get('bubblePos', ({ bubblePos }) => {
+      if (bubblePos && typeof bubblePos.top === 'number' && typeof bubblePos.left === 'number') {
+        bubble.style.top = bubblePos.top + 'px';
+        bubble.style.left = bubblePos.left + 'px';
+        bubble.style.right = 'unset';
+      } else {
+        bubble.style.top = '20px';
+        bubble.style.right = '20px';
+      }
+    });
+
+    // Drag behaviour
+    let drag = { active: false, moved: false, offsetX: 0, offsetY: 0 };
+
+    bubble.addEventListener('mousedown', (e) => {
+      drag.active = true;
+      drag.moved = false;
+      drag.offsetX = e.clientX - bubble.offsetLeft;
+      drag.offsetY = e.clientY - bubble.offsetTop;
+      bubble.style.cursor = 'grabbing';
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+
+    function onMove(e) {
+      if (!drag.active) return;
+      drag.moved = true;
+      const x = Math.min(window.innerWidth - bubble.offsetWidth, Math.max(0, e.clientX - drag.offsetX));
+      const y = Math.min(window.innerHeight - bubble.offsetHeight, Math.max(0, e.clientY - drag.offsetY));
+      bubble.style.left = x + 'px';
+      bubble.style.top = y + 'px';
+      bubble.style.right = 'unset';
+    }
+
+    function onUp() {
+      if (!drag.active) return;
+      drag.active = false;
+      bubble.style.cursor = 'grab';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      chrome.storage.local.set({ bubblePos: { top: parseInt(bubble.style.top, 10), left: parseInt(bubble.style.left, 10) } });
+      setTimeout(() => { drag.moved = false; }, 0);
+    }
+
+    bubble.addEventListener('click', (e) => {
+      if (drag.moved) return;
+      showBubbleMenu();
+    });
   }
 
   function showBubbleMenu() {
@@ -631,7 +697,7 @@
     }, 3000);
   }
 
-  function createRainbowModal(selectedText) {
+  function createRainbowModal(selectedText, customPromptId = null) {
     if (STATE.modal) return;
 
     const modal = document.createElement('div');
@@ -651,6 +717,7 @@
           <div class="modal-actions" style="display: none;">
             <button class="btn-write-here">Write Here</button>
             <button class="btn-copy">Copy</button>
+            <button class="btn-use-prompt">Use Custom Prompt</button>
           </div>
         </div>
       </div>
@@ -799,6 +866,11 @@
       .btn-write-here {
         background: linear-gradient(45deg, #4ecdc4, #44a08d) !important;
       }
+
+      .btn-use-prompt {
+        background: linear-gradient(45deg, #ffd600, #ff9800) !important;
+        color: #181c20 !important;
+      }
     `;
 
     document.head.appendChild(style);
@@ -812,21 +884,26 @@
     });
 
     // Generate answer
-    generateAnswer(selectedText);
+    generateAnswer(selectedText, customPromptId);
   }
 
-  async function generateAnswer(questionText) {
+  async function generateAnswer(questionText, customPromptId = null) {
     try {
       const ctx = await getContext();
-      const prompt = buildPrompt('auto', questionText, ctx);
-      const response = await chrome.runtime.sendMessage({ 
-        type: 'GEMINI_GENERATE', 
-        prompt 
-      });
-      
-      if (!response?.ok) throw new Error(response?.error || 'Generation failed');
-      
-      const answer = response.result;
+      let answer = '';
+      let promptName = 'auto';
+      if (customPromptId) {
+        const resp = await chrome.runtime.sendMessage({ type: 'RUN_CUSTOM_PROMPT', id: customPromptId, text: questionText });
+        if (!resp?.ok) throw new Error(resp?.error || 'Generation failed');
+        answer = resp.result;
+        promptName = resp.promptName || 'custom';
+        await chrome.storage.local.set({ lastCustomPromptId: customPromptId });
+      } else {
+        const prompt = buildPrompt('auto', questionText, ctx);
+        const response = await chrome.runtime.sendMessage({ type: 'GEMINI_GENERATE', prompt });
+        if (!response?.ok) throw new Error(response?.error || 'Generation failed');
+        answer = response.result;
+      }
       STATE.currentAnswer = answer;
       await chrome.storage.local.set({ lastAnswer: answer });
       
@@ -848,16 +925,68 @@
           navigator.clipboard.writeText(answer);
           showNotification('Answer copied to clipboard!');
         });
+
+        modal.querySelector('.btn-use-prompt').addEventListener('click', () => {
+          openPromptSelector(questionText);
+        });
       }
-      
+
       // Save context
-      await saveContext({ q: questionText, a: answer });
-      
+      await saveContext({ q: questionText, a: answer, promptName });
+
     } catch (e) {
       if (STATE.modal) {
         STATE.modal.querySelector('.loading').textContent = 'Error: ' + (e.message || 'Failed to generate answer');
       }
     }
+  }
+
+  async function openPromptSelector(questionText){
+    const { customPrompts=[] } = await chrome.storage.sync.get('customPrompts');
+    if(!customPrompts.length){ showNotification('No custom prompts'); return; }
+    const content = `
+      <input id="prFilter" placeholder="Filter by tag" style="margin-bottom:10px;padding:8px 12px;border-radius:6px;border:1px solid #334155;background:#0b1220;color:#e2e8f0;width:100%;"/>
+      <div id="prList"></div>
+      <div class="pr-actions" style="display:flex;justify-content:flex-end;gap:10px;margin-top:15px;">
+        <button id="prRun" class="btn primary">Generate</button>
+        <button id="prCancel" class="btn">Cancel</button>
+      </div>`;
+    const modal = createStyledModal('Custom Prompts', content, null);
+    const style = document.createElement('style');
+    style.textContent = `#prList{max-height:200px;overflow:auto;} .pr-item{padding:8px 12px;border:1px solid #334155;border-radius:6px;margin-bottom:8px;cursor:pointer;} .pr-item.selected{border-color:#ffd600;background:rgba(255,214,0,0.1);} .btn{background:#1f2937;border:1px solid #334155;color:#e2e8f0;border-radius:6px;padding:8px 16px;cursor:pointer;transition:filter .2s;} .btn:hover{filter:brightness(1.1);} .btn.primary{background:#22c55e;border-color:#22c55e;color:#0b1215;font-weight:600;}`;
+    modal.appendChild(style);
+    const listEl = modal.querySelector('#prList');
+    let filtered=[...customPrompts]; let selectedId=null;
+    function render(){
+      listEl.innerHTML = filtered.map(p=>`<div class="pr-item" data-id="${p.id}">${p.name}</div>`).join('');
+      listEl.querySelectorAll('.pr-item').forEach(it=>{
+        it.addEventListener('click',()=>{
+          selectedId = it.dataset.id;
+          listEl.querySelectorAll('.pr-item').forEach(x=>x.classList.remove('selected'));
+          it.classList.add('selected');
+        });
+      });
+    }
+    render();
+    modal.querySelector('#prFilter').addEventListener('input', e=>{
+      const tag=e.target.value.trim();
+      filtered = customPrompts.filter(p=>!tag || (p.tags||[]).includes(tag));
+      selectedId=null; render();
+    });
+    modal.querySelector('#prCancel').addEventListener('click',()=>modal.remove());
+    modal.querySelector('#prRun').addEventListener('click', () => {
+      const pr = customPrompts.find(p=>p.id===selectedId);
+      if(!pr){ showNotification('Select a prompt'); return; }
+      modal.remove();
+      if(STATE.modal){
+        const loadEl = STATE.modal.querySelector('.loading');
+        const ansEl = STATE.modal.querySelector('.answer-text');
+        const act = STATE.modal.querySelector('.modal-actions');
+        loadEl.style.display='block'; loadEl.textContent='Generating answer...';
+        ansEl.style.display='none'; act.style.display='none';
+        generateAnswer(questionText, pr.id);
+      }
+    });
   }
 
   function closeModal() {
