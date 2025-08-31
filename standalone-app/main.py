@@ -18,6 +18,7 @@ from PyQt5.QtWidgets import (
     QListWidget,
     QMainWindow,
     QMenu,
+    QMessageBox,
     QPushButton,
     QPlainTextEdit,
     QSystemTrayIcon,
@@ -193,16 +194,6 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Standalone App")
-        self.setStyleSheet(
-            """
-            QWidget { background-color: #1e1e1e; color: #f8f8f2; }
-            QPushButton { background-color: #3c3f41; border: 1px solid #5c5f61; padding: 4px; border-radius: 4px; }
-            QPushButton:hover { background-color: #4e5255; }
-            QPlainTextEdit, QListWidget, QLineEdit { background-color: #2b2b2b; border: 1px solid #5c5f61; }
-            QComboBox { background-color: #2b2b2b; border: 1px solid #5c5f61; }
-            QMenu { background-color: #2b2b2b; color: #f8f8f2; }
-            """
-        )
         central = QWidget()
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
@@ -267,6 +258,7 @@ class MainWindow(QMainWindow):
         menu.addAction("Write Last Answer", self.write_last_answer)
         menu.addAction("Clear AI Context", self.reset_context)
         menu.addAction("IP Information", self.show_ip_info)
+        menu.addAction("API Keys", self.edit_api_keys)
         self.tray.setContextMenu(menu)
 
         self.fetch_ip()
@@ -340,6 +332,13 @@ class MainWindow(QMainWindow):
             return
         provider = self.provider_box.currentText()
         answer = providers.generate(text, provider)
+        if not answer:
+            QMessageBox.warning(
+                self,
+                "Provider Error",
+                "No answer returned. Check your API key and network connection.",
+            )
+            return
         self.last_answer = answer
         self.questions.append(text)
         self.questions = self.questions[-5:]
@@ -351,6 +350,10 @@ class MainWindow(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    theme_file = os.path.join(os.path.dirname(__file__), "theme.qss")
+    if os.path.exists(theme_file):
+        with open(theme_file) as f:
+            app.setStyleSheet(f.read())
     w = MainWindow()
     w.resize(800, 600)
     w.show()

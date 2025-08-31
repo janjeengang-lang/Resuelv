@@ -7,7 +7,8 @@ Additional features include:
 
 - **Global Hotkey** `Ctrl+Shift+G` to generate an answer for any text copied to the clipboard.
 - **OCR Capture** from the system tray to select a screen region, run OCR.space and feed the text back into the generator.
-- **In-app API Key manager** to store keys for OpenRouter, Gemini, Cerebras and OCR.space without editing files.
+- **In-app API Key manager** to store keys for OpenRouter, Gemini, Cerebras and OCR.space without editing files. The dialog is available from the main window or the tray icon.
+- **Theme file** `theme.qss` mirroring the browser extension's dark look; modify it to tweak colors.
 
 ## Setup
 
