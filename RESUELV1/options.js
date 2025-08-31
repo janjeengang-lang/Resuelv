@@ -11,6 +11,7 @@ const els = {
   save: document.getElementById('save'),
   clear: document.getElementById('clear'),
   status: document.getElementById('status'),
+  managePrompts: document.getElementById('managePrompts'),
 };
 
 function notify(msg, isErr=false){ els.status.textContent = msg; els.status.className = 'status' + (isErr?' error':''); }
@@ -55,6 +56,11 @@ els.clear.addEventListener('click', async () => {
   await chrome.storage.local.clear();
   await load();
   notify('Cleared');
+});
+
+els.managePrompts.addEventListener('click', () => {
+  const url = chrome.runtime.getURL('prompts.html');
+  chrome.tabs.create({ url });
 });
 
 els.test.addEventListener('click', async () => {

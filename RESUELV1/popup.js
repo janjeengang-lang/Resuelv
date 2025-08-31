@@ -7,6 +7,7 @@ const els = {
   openOptions: document.getElementById('openOptions'),
   history: document.getElementById('history'),
   ipInfoText: document.getElementById('ipInfoText'),
+  btnCustomPrompt: document.getElementById('btnCustomPrompt'),
 };
 
 const btnMap = {
@@ -68,6 +69,8 @@ updateButtonVisibility();
 
 els.openOptions.addEventListener('click', () => chrome.runtime.openOptionsPage());
 
+let lastQuestion = '';
+
 async function handleMode(mode){
   if (mode === 'reset') { await chrome.storage.local.set({ contextQA: [] }); renderHistory([]); return notify('Context cleared'); }
   if (mode === 'ocr') {
@@ -104,6 +107,7 @@ async function handleMode(mode){
       questionText = ocr.text;
       if (!questionText) throw new Error('OCR returned empty text');
     }
+    lastQuestion = questionText;
     const ctx = await getContext();
     const prompt = buildPrompt(mode, questionText, ctx);
     const gen = await chrome.runtime.sendMessage({ type:'GEMINI_GENERATE', prompt });
@@ -157,6 +161,35 @@ els.btnWrite.addEventListener('click', async () => {
     await chrome.tabs.sendMessage(tab.id, { type:'TYPE_TEXT', text: els.preview.value, options: { speed: typingSpeed } });
     notify('Typed');
   } catch(e){ notify('Type failed: '+(e?.message||e), true); }
+});
+
+els.btnCustomPrompt.addEventListener('click', async () => {
+  if (!lastQuestion) { notify('No question', true); return; }
+  try {
+    const { customPrompts = [] } = await chrome.storage.sync.get('customPrompts');
+    if (!customPrompts.length) { notify('No custom prompts saved'); return; }
+    const name = prompt('Choose prompt:\n' + customPrompts.map(p => p.name).join('\n'));
+    if (!name) return;
+    const entry = customPrompts.find(p => p.name === name);
+    if (!entry) return;
+    setBusy(true); notify('');
+    const ctx = await getContext();
+    let promptText = entry.text;
+    if (promptText.includes('{{text}}')) promptText = promptText.replace(/{{text}}/g, lastQuestion);
+    else promptText = `${promptText}\n${lastQuestion}`;
+    const gen = await chrome.runtime.sendMessage({ type:'GEMINI_GENERATE', prompt: promptText });
+    if (!gen?.ok) throw new Error(gen?.error || 'Generate failed');
+    const answer = (gen.result || '').trim();
+    els.preview.value = answer;
+    await chrome.storage.local.set({ lastAnswer: answer });
+    await saveContext({ q: lastQuestion, a: answer });
+    renderHistory(await getContext());
+    notify('Ready');
+  } catch (e) {
+    notify(String(e?.message || e), true);
+  } finally {
+    setBusy(false);
+  }
 });
 
 async function loadIP(){

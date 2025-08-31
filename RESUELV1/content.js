@@ -10,11 +10,12 @@
   const STATE = { 
     overlay: null, 
     rectEl: null, 
-    modal: null, 
+    modal: null,
     bubble: null,
     currentAnswer: '',
     isTyping: false,
-    selBtn: null
+    selBtn: null,
+    lastQuestion: ''
   };
 
   // Create floating bubble
@@ -614,6 +615,7 @@
   function createRainbowModal(selectedText) {
     if (STATE.modal) return;
 
+    STATE.lastQuestion = selectedText;
     const modal = document.createElement('div');
     modal.id = 'resuelv-modal';
     modal.innerHTML = `
@@ -631,6 +633,7 @@
           <div class="modal-actions" style="display: none;">
             <button class="btn-write-here">Write Here</button>
             <button class="btn-copy">Copy</button>
+            <button class="btn-use-prompt">Use Custom Prompt</button>
           </div>
         </div>
       </div>
@@ -791,17 +794,38 @@
       if (e.target === modal) closeModal();
     });
 
+    modal.querySelector('.btn-use-prompt').addEventListener('click', async () => {
+      const { customPrompts = [] } = await chrome.storage.sync.get('customPrompts');
+      if (!customPrompts.length) {
+        showNotification('No custom prompts saved');
+        return;
+      }
+      const name = prompt('Choose prompt:\n' + customPrompts.map(p => p.name).join('\n'));
+      if (!name) return;
+      const entry = customPrompts.find(p => p.name === name);
+      if (!entry) return;
+      modal.querySelector('.loading').style.display = 'block';
+      modal.querySelector('.answer-text').style.display = 'none';
+      modal.querySelector('.modal-actions').style.display = 'none';
+      await generateAnswer(STATE.lastQuestion, entry.text);
+    });
+
     // Generate answer
     generateAnswer(selectedText);
   }
 
-  async function generateAnswer(questionText) {
+  async function generateAnswer(questionText, customPrompt) {
     try {
       const ctx = await getContext();
-      const prompt = buildPrompt('auto', questionText, ctx);
-      const response = await chrome.runtime.sendMessage({ 
-        type: 'GEMINI_GENERATE', 
-        prompt 
+      let prompt;
+      if (customPrompt) {
+        prompt = customPrompt.includes('{{text}}') ? customPrompt.replace(/{{text}}/g, questionText) : `${customPrompt}\n${questionText}`;
+      } else {
+        prompt = buildPrompt('auto', questionText, ctx);
+      }
+      const response = await chrome.runtime.sendMessage({
+        type: 'GEMINI_GENERATE',
+        prompt
       });
       
       if (!response?.ok) throw new Error(response?.error || 'Generation failed');
@@ -818,16 +842,16 @@
         modal.querySelector('.answer-text').textContent = answer;
         modal.querySelector('.modal-actions').style.display = 'flex';
         
-        // Add event listeners for buttons
-        modal.querySelector('.btn-write-here').addEventListener('click', async () => {
+        // Set button actions
+        modal.querySelector('.btn-write-here').onclick = async () => {
           closeModal();
           await typeAnswer(answer);
-        });
-        
-        modal.querySelector('.btn-copy').addEventListener('click', () => {
+        };
+
+        modal.querySelector('.btn-copy').onclick = () => {
           navigator.clipboard.writeText(answer);
           showNotification('Answer copied to clipboard!');
-        });
+        };
       }
       
       // Save context

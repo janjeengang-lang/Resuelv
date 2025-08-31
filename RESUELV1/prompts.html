@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Custom Prompts</title>
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background: #181c20;
+      color: #e2e8f0;
+    }
+    .page {
+      background: #23272b;
+      border-radius: 12px;
+      box-shadow: 0 2px 16px rgba(230,197,157,0.45);
+      padding: 22px 18px 16px 18px;
+      max-width: 600px;
+      margin: 0 auto;
+      border: 2px solid #64077d;
+    }
+    .prompt-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid #292d33;
+    }
+    .prompt-row:last-child { border-bottom: none; }
+    textarea {
+      width: 100%;
+      min-height: 80px;
+      padding: 8px;
+      border-radius: 6px;
+      border: 1px solid #334155;
+      background: #0b1220;
+      color: #e2e8f0;
+      resize: vertical;
+    }
+  </style>
+</head>
+<body class="page">
+  <h2>Custom Prompts</h2>
+  <div class="group">
+    <div id="promptList"></div>
+    <button id="addPrompt" class="btn primary" style="margin-top:10px;">Add Prompt</button>
+  </div>
+  <div id="formSection" class="group" style="display:none;">
+    <label class="row"><span>Name</span><input id="promptName" /></label>
+    <label class="row"><span>Text</span><textarea id="promptText"></textarea></label>
+    <div class="row end">
+      <button id="savePrompt" class="btn primary">Save</button>
+      <button id="cancelPrompt" class="btn">Cancel</button>
+    </div>
+  </div>
+  <script src="prompts.js" type="module"></script>
+</body>
+</html>

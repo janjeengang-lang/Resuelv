@@ -15,6 +15,11 @@ chrome.runtime.onInstalled.addListener(async () => {
     const toSet = {};
     for (const [k, v] of Object.entries(DEFAULTS)) if (cur[k] === undefined) toSet[k] = v;
     if (Object.keys(toSet).length) await chrome.storage.local.set(toSet);
+
+    const syncDefaults = await chrome.storage.sync.get('customPrompts');
+    if (!Array.isArray(syncDefaults.customPrompts)) {
+      await chrome.storage.sync.set({ customPrompts: [] });
+    }
     
     // Create context menu
     await chrome.contextMenus.removeAll();
