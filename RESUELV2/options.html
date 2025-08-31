@@ -148,6 +148,37 @@
         color: #86efac;
         border-color: #22c55e;
       }
+
+      /* Custom prompts table and buttons */
+      #promptTable th,
+      #promptTable td {
+        border: 1px solid #334155;
+        padding: 8px;
+        text-align: left;
+      }
+
+      #promptTable th {
+        background: #1f2937;
+        color: #ffd600;
+      }
+
+      #promptTable tr:nth-child(even) {
+        background: rgba(255, 255, 255, 0.03);
+      }
+
+      textarea#promptText {
+        background: #0b1220;
+        border: 1px solid #334155;
+        color: #e2e8f0;
+        border-radius: 6px;
+        padding: 8px 12px;
+        resize: vertical;
+      }
+
+      .btn.small {
+        padding: 4px 10px;
+        font-size: 0.8em;
+      }
     </style>
   </head>
   <body class="page">
