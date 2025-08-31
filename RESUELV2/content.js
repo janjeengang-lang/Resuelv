@@ -54,12 +54,10 @@
     
     bubble.style.cssText = `
       position: fixed;
-      top: 20px;
-      right: 20px;
       width: 60px;
       height: 60px;
       z-index: 2147483647;
-      cursor: pointer;
+      cursor: grab;
       border-radius: 50%;
       background: linear-gradient(45deg, #ff6b6b, #4ecdc4, #45b7d1, #96ceb4, #feca57, #ff9ff3, #54a0ff);
       background-size: 400% 400%;
@@ -125,7 +123,55 @@
     document.body.appendChild(bubble);
     STATE.bubble = bubble;
 
-    bubble.addEventListener('click', showBubbleMenu);
+    // Position bubble using stored value or default
+    chrome.storage.local.get('bubblePos', ({ bubblePos }) => {
+      if (bubblePos && typeof bubblePos.top === 'number' && typeof bubblePos.left === 'number') {
+        bubble.style.top = bubblePos.top + 'px';
+        bubble.style.left = bubblePos.left + 'px';
+        bubble.style.right = 'unset';
+      } else {
+        bubble.style.top = '20px';
+        bubble.style.right = '20px';
+      }
+    });
+
+    // Drag behaviour
+    let drag = { active: false, moved: false, offsetX: 0, offsetY: 0 };
+
+    bubble.addEventListener('mousedown', (e) => {
+      drag.active = true;
+      drag.moved = false;
+      drag.offsetX = e.clientX - bubble.offsetLeft;
+      drag.offsetY = e.clientY - bubble.offsetTop;
+      bubble.style.cursor = 'grabbing';
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+
+    function onMove(e) {
+      if (!drag.active) return;
+      drag.moved = true;
+      const x = Math.min(window.innerWidth - bubble.offsetWidth, Math.max(0, e.clientX - drag.offsetX));
+      const y = Math.min(window.innerHeight - bubble.offsetHeight, Math.max(0, e.clientY - drag.offsetY));
+      bubble.style.left = x + 'px';
+      bubble.style.top = y + 'px';
+      bubble.style.right = 'unset';
+    }
+
+    function onUp() {
+      if (!drag.active) return;
+      drag.active = false;
+      bubble.style.cursor = 'grab';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      chrome.storage.local.set({ bubblePos: { top: parseInt(bubble.style.top, 10), left: parseInt(bubble.style.left, 10) } });
+      setTimeout(() => { drag.moved = false; }, 0);
+    }
+
+    bubble.addEventListener('click', (e) => {
+      if (drag.moved) return;
+      showBubbleMenu();
+    });
   }
 
   function showBubbleMenu() {
