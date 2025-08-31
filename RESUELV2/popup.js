@@ -68,6 +68,7 @@ updateButtonVisibility();
 
 els.openOptions?.addEventListener('click', () => chrome.runtime.openOptionsPage());
 
+
 async function handleMode(mode){
   if (mode === 'reset') {
     await chrome.storage.local.set({ contextQA: [] });

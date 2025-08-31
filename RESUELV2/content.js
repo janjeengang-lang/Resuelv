@@ -1,4 +1,3 @@
-
 // content.js
 // - Extract selected text or from DOM
 // - Overlay to select OCR region
@@ -25,14 +24,16 @@
   });
 
   document.addEventListener('keydown', e => {
-    const combo = (e.ctrlKey?'Ctrl+':'') + (e.altKey?'Alt+':'') + (e.shiftKey?'Shift+':'') + e.key.toUpperCase();
+    const combo = (e.ctrlKey ? 'Ctrl+' : '') +
+                  (e.altKey ? 'Alt+' : '') +
+                  (e.shiftKey ? 'Shift+' : '') +
+                  e.key.toUpperCase();
     const pr = customPrompts.find(p => p.hotkey && p.hotkey.toUpperCase() === combo);
-    if(pr){
-      const text = window.getSelection().toString();
-      if(!text) return;
-      chrome.runtime.sendMessage({ type:'RUN_CUSTOM_PROMPT', id: pr.id, text }, res => {
-        if(res?.ok) alert(res.result); else if(res?.error) alert(res.error);
-      });
+    if (pr) {
+      const text = window.getSelection().toString().trim();
+      if (!text) return;
+      // Use integrated rainbow modal for a consistent UX instead of a simple alert.
+      createRainbowModal(text, pr.id);
       e.preventDefault();
     }
   });
@@ -696,7 +697,7 @@
     }, 3000);
   }
 
-  function createRainbowModal(selectedText) {
+  function createRainbowModal(selectedText, customPromptId = null) {
     if (STATE.modal) return;
 
     const modal = document.createElement('div');
@@ -883,21 +884,26 @@
     });
 
     // Generate answer
-    generateAnswer(selectedText);
+    generateAnswer(selectedText, customPromptId);
   }
 
-  async function generateAnswer(questionText) {
+  async function generateAnswer(questionText, customPromptId = null) {
     try {
       const ctx = await getContext();
-      const prompt = buildPrompt('auto', questionText, ctx);
-      const response = await chrome.runtime.sendMessage({ 
-        type: 'GEMINI_GENERATE', 
-        prompt 
-      });
-      
-      if (!response?.ok) throw new Error(response?.error || 'Generation failed');
-      
-      const answer = response.result;
+      let answer = '';
+      let promptName = 'auto';
+      if (customPromptId) {
+        const resp = await chrome.runtime.sendMessage({ type: 'RUN_CUSTOM_PROMPT', id: customPromptId, text: questionText });
+        if (!resp?.ok) throw new Error(resp?.error || 'Generation failed');
+        answer = resp.result;
+        promptName = resp.promptName || 'custom';
+        await chrome.storage.local.set({ lastCustomPromptId: customPromptId });
+      } else {
+        const prompt = buildPrompt('auto', questionText, ctx);
+        const response = await chrome.runtime.sendMessage({ type: 'GEMINI_GENERATE', prompt });
+        if (!response?.ok) throw new Error(response?.error || 'Generation failed');
+        answer = response.result;
+      }
       STATE.currentAnswer = answer;
       await chrome.storage.local.set({ lastAnswer: answer });
       
@@ -926,8 +932,9 @@
       }
 
       // Save context
-      await saveContext({ q: questionText, a: answer, promptName: 'auto' });
-      
+      // Save the specific prompt name for better context tracking.
+      await saveContext({ q: questionText, a: answer, promptName });
+
     } catch (e) {
       if (STATE.modal) {
         STATE.modal.querySelector('.loading').textContent = 'Error: ' + (e.message || 'Failed to generate answer');
@@ -968,7 +975,7 @@
       selectedId=null; render();
     });
     modal.querySelector('#prCancel').addEventListener('click',()=>modal.remove());
-    modal.querySelector('#prRun').addEventListener('click', async ()=>{
+    modal.querySelector('#prRun').addEventListener('click', () => {
       const pr = customPrompts.find(p=>p.id===selectedId);
       if(!pr){ showNotification('Select a prompt'); return; }
       modal.remove();
@@ -978,22 +985,8 @@
         const act = STATE.modal.querySelector('.modal-actions');
         loadEl.style.display='block'; loadEl.textContent='Generating answer...';
         ansEl.style.display='none'; act.style.display='none';
-      }
-      try{
-        const resp = await chrome.runtime.sendMessage({ type:'RUN_CUSTOM_PROMPT', id: pr.id, text: questionText });
-        if(!resp?.ok) throw new Error(resp.error||'Failed');
-        const answer = resp.result.trim();
-        STATE.currentAnswer = answer;
-        if(STATE.modal){
-          const ansEl = STATE.modal.querySelector('.answer-text');
-          ansEl.textContent = answer; ansEl.style.display='block';
-          STATE.modal.querySelector('.modal-actions').style.display='flex';
-          STATE.modal.querySelector('.loading').style.display='none';
-        }
-        await chrome.storage.local.set({ lastAnswer: answer, lastCustomPromptId: pr.id });
-        await saveContext({ q: questionText, a: answer, promptName: resp.promptName || pr.name });
-      }catch(e){
-        if(STATE.modal) STATE.modal.querySelector('.loading').textContent = 'Error: '+e.message;
+        // Reuse the main generation function for consistency and maintainability.
+        generateAnswer(questionText, pr.id);
       }
     });
   }

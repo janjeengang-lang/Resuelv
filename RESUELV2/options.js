@@ -23,6 +23,7 @@ const els = {
 };
 
 function notify(msg, isErr = false) {
+  // Add guard to prevent errors if the status element is missing.
   if (!els.status) return;
   els.status.textContent = msg;
   els.status.className = 'status' + (isErr ? ' error' : '');
@@ -72,6 +73,7 @@ function renderPromptTable(list) {
   for (const p of list) {
     const tr = document.createElement('tr');
 
+    // Add checks for potentially undefined properties for robustness.
     const tags = Array.isArray(p.tags) ? p.tags.join(', ') : '';
     const hot  = (p.hotkey || '');
 
