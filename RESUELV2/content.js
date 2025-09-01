@@ -15,8 +15,29 @@
     currentAnswer: '',
     isTyping: false,
     selBtn: null,
-    lastFocused: null
+    lastFocused: null,
+    lastMouse: { x: 20, y: 20 }
   };
+
+  let customPrompts = [];
+  chrome.storage.sync.get('customPrompts', r => { customPrompts = r.customPrompts || []; });
+  chrome.storage.onChanged.addListener((chg, area) => {
+    if(area === 'sync' && chg.customPrompts){ customPrompts = chg.customPrompts.newValue || []; }
+  });
+
+  document.addEventListener('keydown', e => {
+    const combo = (e.ctrlKey ? 'Ctrl+' : '') +
+                  (e.altKey ? 'Alt+' : '') +
+                  (e.shiftKey ? 'Shift+' : '') +
+                  e.key.toUpperCase();
+    const pr = customPrompts.find(p => p.hotkey && p.hotkey.toUpperCase() === combo);
+    if (pr) {
+      const text = window.getSelection().toString().trim();
+      if (!text) return;
+      createRainbowModal(text, pr.id);
+      e.preventDefault();
+    }
+  });
 
   document.addEventListener('focusin', (e) => { STATE.lastFocused = e.target; });
 
@@ -35,12 +56,10 @@
     
     bubble.style.cssText = `
       position: fixed;
-      top: 20px;
-      right: 20px;
       width: 60px;
       height: 60px;
       z-index: 2147483647;
-      cursor: pointer;
+      cursor: grab;
       border-radius: 50%;
       background: linear-gradient(45deg, #ff6b6b, #4ecdc4, #45b7d1, #96ceb4, #feca57, #ff9ff3, #54a0ff);
       background-size: 400% 400%;
@@ -106,7 +125,55 @@
     document.body.appendChild(bubble);
     STATE.bubble = bubble;
 
-    bubble.addEventListener('click', showBubbleMenu);
+    // Position bubble using stored value or default
+    chrome.storage.local.get('bubblePos', ({ bubblePos }) => {
+      if (bubblePos && typeof bubblePos.top === 'number' && typeof bubblePos.left === 'number') {
+        bubble.style.top = bubblePos.top + 'px';
+        bubble.style.left = bubblePos.left + 'px';
+        bubble.style.right = 'unset';
+      } else {
+        bubble.style.top = '20px';
+        bubble.style.right = '20px';
+      }
+    });
+
+    // Drag behaviour
+    let drag = { active: false, moved: false, offsetX: 0, offsetY: 0 };
+
+    bubble.addEventListener('mousedown', (e) => {
+      drag.active = true;
+      drag.moved = false;
+      drag.offsetX = e.clientX - bubble.offsetLeft;
+      drag.offsetY = e.clientY - bubble.offsetTop;
+      bubble.style.cursor = 'grabbing';
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+
+    function onMove(e) {
+      if (!drag.active) return;
+      drag.moved = true;
+      const x = Math.min(window.innerWidth - bubble.offsetWidth, Math.max(0, e.clientX - drag.offsetX));
+      const y = Math.min(window.innerHeight - bubble.offsetHeight, Math.max(0, e.clientY - drag.offsetY));
+      bubble.style.left = x + 'px';
+      bubble.style.top = y + 'px';
+      bubble.style.right = 'unset';
+    }
+
+    function onUp() {
+      if (!drag.active) return;
+      drag.active = false;
+      bubble.style.cursor = 'grab';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      chrome.storage.local.set({ bubblePos: { top: parseInt(bubble.style.top, 10), left: parseInt(bubble.style.left, 10) } });
+      setTimeout(() => { drag.moved = false; }, 0);
+    }
+
+    bubble.addEventListener('click', (e) => {
+      if (drag.moved) return;
+      showBubbleMenu();
+    });
   }
 
   function showBubbleMenu() {
@@ -125,6 +192,10 @@
             <span class="menu-icon">📷</span>
             <span class="menu-text">OCR Capture</span>
           </div>
+          <div class="menu-item" data-action="ocr-full">
+            <span class="menu-icon">🖼️</span>
+            <span class="menu-text">OCR Full Page</span>
+          </div>
           <div class="menu-item" data-action="write-last">
             <span class="menu-icon">✍️</span>
             <span class="menu-text">Write Last Answer</span>
@@ -136,6 +207,10 @@
           <div class="menu-item" data-action="ip-info">
             <span class="menu-icon">🌐</span>
             <span class="menu-text">IP Information</span>
+          </div>
+          <div class="menu-item" data-action="fake-info">
+            <span class="menu-icon">👤</span>
+            <span class="menu-text">Generate Fake Info</span>
           </div>
         </div>
       </div>
@@ -273,6 +348,9 @@
       case 'ocr':
         startOCRCapture();
         break;
+      case 'ocr-full':
+        startFullPageOCR();
+        break;
       case 'write-last':
         try {
           const { lastAnswer = '' } = await chrome.storage.local.get('lastAnswer');
@@ -289,8 +367,7 @@
         try {
           const response = await chrome.runtime.sendMessage({ type: 'GET_PUBLIC_IP' });
           if (response.ok) {
-            const { ip, country, city, postal, isp, timezone } = response.info;
-            showIPModal(ip, country, city, postal, isp, timezone);
+            showIPModal(response.info);
           } else {
             showNotification('Failed to get IP information: ' + (response.error || 'Unknown error'));
           }
@@ -298,10 +375,20 @@
           showNotification('Failed to get IP information: ' + e.message);
         }
         break;
+      case 'fake-info':
+        showFakeInfoModal();
+        break;
     }
   }
 
-  function showIPModal(ip, country, city, postal, isp, timezone) {
+  function showIPModal(info) {
+    const { ip, raw = {}, ...rest } = info || {};
+    const entries = { ...rest, ...raw };
+    delete entries.ip;
+    delete entries.raw;
+    const rows = Object.entries(entries)
+      .map(([k, v]) => `<div><strong style="color: #ffd600;">${k.replace(/_/g, ' ')}:</strong> ${v === undefined ? 'Unknown' : v}</div>`)
+      .join('');
     const modal = createStyledModal('IP Information', `
       <div style="background: linear-gradient(120deg, #120f12 80%, #0a0f17 100%); padding: 20px; border-radius: 10px; margin: 10px 0;">
         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
@@ -310,14 +397,89 @@
           <button onclick="navigator.clipboard.writeText('${ip || ''}')" style="background: #22c55e; border: none; color: white; padding: 5px 10px; border-radius: 5px; cursor: pointer; font-size: 12px;">Copy</button>
         </div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; color: #e2e8f0;">
-          <div><strong style="color: #ffd600;">Country:</strong> ${country || 'Unknown'}</div>
-          <div><strong style="color: #ffd600;">City:</strong> ${city || 'Unknown'}</div>
-          <div><strong style="color: #ffd600;">Postal:</strong> ${postal || 'Unknown'}</div>
-          <div><strong style="color: #ffd600;">ISP:</strong> ${isp || 'Unknown'}</div>
-          <div style="grid-column: 1 / -1;"><strong style="color: #ffd600;">Timezone:</strong> ${timezone || 'Unknown'}</div>
+          ${rows}
         </div>
       </div>
     `);
+  }
+
+  async function showFakeInfoModal() {
+    const content = `
+      <div style="margin-bottom:15px; display:flex; gap:10px; flex-wrap:wrap;">
+        <select id="fiGender" style="flex:1; padding:6px; border-radius:6px; background:#0b1220; color:#e2e8f0; border:1px solid #334155;">
+          <option value="">Any Gender</option>
+          <option value="male">Male</option>
+          <option value="female">Female</option>
+        </select>
+        <input id="fiNat" placeholder="Nationality (e.g., US)" style="flex:1; padding:6px; border-radius:6px; background:#0b1220; color:#e2e8f0; border:1px solid #334155;" />
+        <button id="fiGenerate" style="background:linear-gradient(45deg,#4ecdc4,#44a08d); border:none; color:#fff; padding:6px 12px; border-radius:6px; cursor:pointer;">Generate</button>
+      </div>
+      <div id="fiResult" style="display:none;"></div>
+    `;
+    const modal = createStyledModal('Fake User Info', content);
+
+    async function generate(force=false){
+      try {
+        const gender = modal.querySelector('#fiGender').value;
+        const nat = modal.querySelector('#fiNat').value.trim();
+        const resp = await chrome.runtime.sendMessage({ type:'GENERATE_FAKE_INFO', gender, nat, force });
+        if (!resp?.ok) throw new Error(resp?.error || 'Failed');
+        render(resp.data);
+      } catch(e){
+        showNotification('Failed to generate: '+e.message);
+      }
+    }
+
+    function render(user){
+      const fi = modal.querySelector('#fiResult');
+      const name = `${user.name?.first || ''} ${user.name?.last || ''}`.trim();
+      const address = `${user.location?.street?.number || ''} ${user.location?.street?.name || ''}, ${user.location?.city || ''}, ${user.location?.country || ''}`.trim();
+      const dob = user.dob?.date ? user.dob.date.split('T')[0] : '';
+      const fields = [
+        { label:'Name', value:name },
+        { label:'Email', value:user.email },
+        { label:'Phone', value:user.phone },
+        { label:'Address', value:address },
+        { label:'DOB', value:dob }
+      ];
+      fi.innerHTML = `
+        <div style="text-align:center; margin-bottom:15px;">
+          ${user.picture?.large ? `<img src="${user.picture.large}" style="width:80px;height:80px;border-radius:50%;object-fit:cover;"/>` : ''}
+        </div>
+        ${fields.map((f,i)=>`
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+            <strong style="color:#ffd600; min-width:70px;">${f.label}:</strong>
+            <span style="flex:1; color:#e2e8f0;">${f.value || 'Unknown'}</span>
+            <button data-copy="${i}" style="background:#22c55e;border:none;color:#fff;padding:4px 8px;border-radius:5px;cursor:pointer;font-size:12px;">Copy</button>
+            <button data-write="${i}" style="background:#ff6b6b;border:none;color:#fff;padding:4px 8px;border-radius:5px;cursor:pointer;font-size:12px;">Write Here</button>
+          </div>
+        `).join('')}
+        <div style="text-align:center; margin-top:10px;">
+          <button id="fiRegenerate" style="background:linear-gradient(45deg,#feca57,#ff9ff3); border:none; color:#fff; padding:8px 16px; border-radius:20px; cursor:pointer; font-weight:bold;">Regenerate Info</button>
+        </div>
+      `;
+      fi.style.display = 'block';
+
+      fi.querySelectorAll('[data-copy]').forEach(btn=>{
+        btn.addEventListener('click',()=>{
+          const idx = btn.getAttribute('data-copy');
+          navigator.clipboard.writeText(fields[idx].value || '');
+          showNotification('Copied to clipboard');
+        });
+      });
+      fi.querySelectorAll('[data-write]').forEach(btn=>{
+        btn.addEventListener('click',()=>{
+          const idx = btn.getAttribute('data-write');
+          const text = fields[idx].value || '';
+          const m = document.getElementById('resuelv-styled-modal');
+          if (m) m.remove();
+          typeAnswer(text);
+        });
+      });
+      fi.querySelector('#fiRegenerate')?.addEventListener('click',()=>generate(true));
+    }
+
+    modal.querySelector('#fiGenerate').addEventListener('click', () => generate(false));
   }
 
   function showLastAnswerModal(answer) {
@@ -448,11 +610,29 @@
     });
   }
 
+  async function startFullPageOCR() {
+    try {
+      const { ocrLang = 'eng' } = await chrome.storage.local.get('ocrLang');
+      const response = await chrome.runtime.sendMessage({
+        type: 'CAPTURE_FULL_PAGE_OCR',
+        tabId: await getTabId(),
+        ocrLang
+      });
+      if (response?.ok) {
+        showOCRResultModal(response.text);
+      } else {
+        showNotification('OCR failed: ' + (response?.error || 'Unknown error'));
+      }
+    } catch (e) {
+      showNotification('OCR error: ' + e.message);
+    }
+  }
+
   function showOCRResultModal(extractedText) {
     const modal = createStyledModal('OCR Result', `
       <div style="background: linear-gradient(120deg, #120f12 80%, #0a0f17 100%); padding: 20px; border-radius: 10px; margin: 10px 0;">
         <p style="color: #e2e8f0; margin-bottom: 15px;">Extracted Text:</p>
-        <div style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; margin: 15px 0; max-height: 200px; overflow-y: auto;">
+        <div style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; margin: 15px 0; max-height: 300px; overflow-y: auto;">
           <pre style="color: #94a3b8; white-space: pre-wrap; font-size: 14px; margin: 0;">${extractedText}</pre>
         </div>
         <div style="display: flex; justify-content: center; gap: 10px; margin-top: 20px;">
@@ -631,7 +811,7 @@
     }, 3000);
   }
 
-  function createRainbowModal(selectedText) {
+  function createRainbowModal(selectedText, customPromptId = null) {
     if (STATE.modal) return;
 
     const modal = document.createElement('div');
@@ -651,6 +831,7 @@
           <div class="modal-actions" style="display: none;">
             <button class="btn-write-here">Write Here</button>
             <button class="btn-copy">Copy</button>
+            <button class="btn-use-prompt">Use Custom Prompt</button>
           </div>
         </div>
       </div>
@@ -739,8 +920,10 @@
       .modal-body {
         padding: 20px;
         color: #e2e8f0;
+        max-height: 70vh;
+        overflow-y: auto;
       }
-      
+
       .question-text {
         background: rgba(0,0,0,0.2);
         padding: 15px;
@@ -748,14 +931,18 @@
         margin-bottom: 20px;
         font-style: italic;
         border-left: 4px solid #feca57;
+        max-height: 200px;
+        overflow-y: auto;
       }
-      
+
       .answer-container {
         background: rgba(255,255,255,0.1);
         padding: 15px;
         border-radius: 10px;
         margin-bottom: 20px;
         min-height: 60px;
+        max-height: 300px;
+        overflow-y: auto;
       }
       
       .loading {
@@ -799,6 +986,11 @@
       .btn-write-here {
         background: linear-gradient(45deg, #4ecdc4, #44a08d) !important;
       }
+
+      .btn-use-prompt {
+        background: linear-gradient(45deg, #ffd600, #ff9800) !important;
+        color: #181c20 !important;
+      }
     `;
 
     document.head.appendChild(style);
@@ -812,21 +1004,26 @@
     });
 
     // Generate answer
-    generateAnswer(selectedText);
+    generateAnswer(selectedText, customPromptId);
   }
 
-  async function generateAnswer(questionText) {
+  async function generateAnswer(questionText, customPromptId = null) {
     try {
       const ctx = await getContext();
-      const prompt = buildPrompt('auto', questionText, ctx);
-      const response = await chrome.runtime.sendMessage({ 
-        type: 'GEMINI_GENERATE', 
-        prompt 
-      });
-      
-      if (!response?.ok) throw new Error(response?.error || 'Generation failed');
-      
-      const answer = response.result;
+      let answer = '';
+      let promptName = 'auto';
+      if (customPromptId) {
+        const resp = await chrome.runtime.sendMessage({ type: 'RUN_CUSTOM_PROMPT', id: customPromptId, text: questionText });
+        if (!resp?.ok) throw new Error(resp?.error || 'Generation failed');
+        answer = resp.result;
+        promptName = resp.promptName || 'custom';
+        await chrome.storage.local.set({ lastCustomPromptId: customPromptId });
+      } else {
+        const prompt = buildPrompt('auto', questionText, ctx);
+        const response = await chrome.runtime.sendMessage({ type: 'GEMINI_GENERATE', prompt });
+        if (!response?.ok) throw new Error(response?.error || 'Generation failed');
+        answer = response.result;
+      }
       STATE.currentAnswer = answer;
       await chrome.storage.local.set({ lastAnswer: answer });
       
@@ -848,16 +1045,68 @@
           navigator.clipboard.writeText(answer);
           showNotification('Answer copied to clipboard!');
         });
+
+        modal.querySelector('.btn-use-prompt').addEventListener('click', () => {
+          openPromptSelector(questionText);
+        });
       }
-      
+
       // Save context
-      await saveContext({ q: questionText, a: answer });
-      
+      await saveContext({ q: questionText, a: answer, promptName });
+
     } catch (e) {
       if (STATE.modal) {
         STATE.modal.querySelector('.loading').textContent = 'Error: ' + (e.message || 'Failed to generate answer');
       }
     }
+  }
+
+  async function openPromptSelector(questionText){
+    const { customPrompts=[] } = await chrome.storage.sync.get('customPrompts');
+    if(!customPrompts.length){ showNotification('No custom prompts'); return; }
+    const content = `
+      <input id="prFilter" placeholder="Filter by tag" style="margin-bottom:10px;padding:8px 12px;border-radius:6px;border:1px solid #334155;background:#0b1220;color:#e2e8f0;width:100%;"/>
+      <div id="prList"></div>
+      <div class="pr-actions" style="display:flex;justify-content:flex-end;gap:10px;margin-top:15px;">
+        <button id="prRun" class="btn primary">Generate</button>
+        <button id="prCancel" class="btn">Cancel</button>
+      </div>`;
+    const modal = createStyledModal('Custom Prompts', content, null);
+    const style = document.createElement('style');
+    style.textContent = `#prList{max-height:200px;overflow:auto;} .pr-item{padding:8px 12px;border:1px solid #334155;border-radius:6px;margin-bottom:8px;cursor:pointer;} .pr-item.selected{border-color:#ffd600;background:rgba(255,214,0,0.1);} .btn{background:#1f2937;border:1px solid #334155;color:#e2e8f0;border-radius:6px;padding:8px 16px;cursor:pointer;transition:filter .2s;} .btn:hover{filter:brightness(1.1);} .btn.primary{background:#22c55e;border-color:#22c55e;color:#0b1215;font-weight:600;}`;
+    modal.appendChild(style);
+    const listEl = modal.querySelector('#prList');
+    let filtered=[...customPrompts]; let selectedId=null;
+    function render(){
+      listEl.innerHTML = filtered.map(p=>`<div class="pr-item" data-id="${p.id}">${p.name}</div>`).join('');
+      listEl.querySelectorAll('.pr-item').forEach(it=>{
+        it.addEventListener('click',()=>{
+          selectedId = it.dataset.id;
+          listEl.querySelectorAll('.pr-item').forEach(x=>x.classList.remove('selected'));
+          it.classList.add('selected');
+        });
+      });
+    }
+    render();
+    modal.querySelector('#prFilter').addEventListener('input', e=>{
+      const tag=e.target.value.trim();
+      filtered = customPrompts.filter(p=>!tag || (p.tags||[]).includes(tag));
+      selectedId=null; render();
+    });
+    modal.querySelector('#prCancel').addEventListener('click',()=>modal.remove());
+    modal.querySelector('#prRun').addEventListener('click', () => {
+      const pr = customPrompts.find(p=>p.id===selectedId);
+      if(!pr){ showNotification('Select a prompt'); return; }
+      modal.remove();
+      if(STATE.modal){
+        const loadEl = STATE.modal.querySelector('.loading');
+        const ansEl = STATE.modal.querySelector('.answer-text');
+        const act = STATE.modal.querySelector('.modal-actions');
+        loadEl.style.display='block'; loadEl.textContent='Generating answer...';
+        ansEl.style.display='none'; act.style.display='none';
+        generateAnswer(questionText, pr.id);
+      }
+    });
   }
 
   function closeModal() {
@@ -885,8 +1134,8 @@
   }
 
   function buildPrompt(mode, question, context) {
-    const ctxLines = (context || []).slice(-5).map((c, i) => `Q${i + 1}: ${c.q}\nA${i + 1}: ${c.a}`).join('\n');
-    const rules = `You are answering a survey question. Use prior context if helpful.\nSTRICT OUTPUT RULES:\n- Output ONLY the final answer; no extra words or punctuation unless part of the answer.\n- Language: match the question language.`;
+    const ctxLines = (context || []).map((c, i) => `Q${i + 1}: ${c.q}\nA${i + 1}: ${c.a}`).join('\n');
+    const rules = `You are answering a survey question. Use prior context if helpful and choose answers that keep the participant qualified for the survey.\nSTRICT OUTPUT RULES:\n- Output ONLY the final answer; no extra words or punctuation unless part of the answer.\n- Language: match the question language.`;
     const tasks = {
       open: 'Open-ended: write 1-3 short natural sentences.',
       mcq: 'Multiple Choice: return the EXACT option text from the provided question/options.',
@@ -906,7 +1155,7 @@
   async function saveContext(entry) {
     const list = await getContext();
     list.push(entry);
-    while (list.length > 5) list.shift();
+    while (list.length > 50) list.shift();
     await chrome.storage.local.set({ contextQA: list });
   }
 
@@ -940,6 +1189,15 @@
           }
           case 'SHOW_RESUELV_MODAL': {
             createRainbowModal(msg.text);
+            sendResponse({ ok: true });
+            break;
+          }
+          case 'GET_PAGE_DIMENSIONS': {
+            sendResponse({ ok: true, width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight, viewHeight: window.innerHeight });
+            break;
+          }
+          case 'SCROLL_TO': {
+            window.scrollTo(0, msg.y || 0);
             sendResponse({ ok: true });
             break;
           }
@@ -1070,11 +1328,17 @@
     showNotification('Human typing mode toggled');
   }
 
-  function handleSelection() {
+  function handleSelection(e) {
+    if (e && e.type === 'mouseup') {
+      STATE.lastMouse = { x: e.clientX, y: e.clientY };
+    }
     const sel = window.getSelection();
     const text = sel && sel.toString ? sel.toString().trim() : '';
     if (text) {
-      const rect = sel.getRangeAt(0).getBoundingClientRect();
+      let rect = sel.getRangeAt(0).getBoundingClientRect();
+      if (!(rect.width || rect.height)) {
+        rect = { top: STATE.lastMouse.y, right: STATE.lastMouse.x, bottom: STATE.lastMouse.y, left: STATE.lastMouse.x };
+      }
       showSelectionButton(rect, text);
     } else {
       removeSelectionButton();
@@ -1086,16 +1350,21 @@
     const btn = document.createElement('div');
     btn.id = 'resuelv-gen-btn';
     btn.textContent = 'Generate Answer';
-    btn.style.cssText = `position:absolute;left:${window.scrollX + rect.right + 5}px;top:${window.scrollY + rect.top - 30}px;z-index:2147483647;background:#23272b;color:#ff9800;padding:4px 8px;border-radius:6px;font-size:12px;box-shadow:0 0 8px rgba(255,152,0,0.7);cursor:pointer;transition:transform 0.2s;`;
+    document.body.appendChild(btn);
+    const btnWidth = btn.offsetWidth || 120;
+    const btnHeight = btn.offsetHeight || 24;
+    let left = window.scrollX + rect.right + 5;
+    let top = window.scrollY + rect.top - 30;
+    left = Math.min(window.scrollX + window.innerWidth - btnWidth - 10, Math.max(window.scrollX + 10, left));
+    top = Math.min(window.scrollY + window.innerHeight - btnHeight - 10, Math.max(window.scrollY + 10, top));
+    btn.style.cssText = `position:absolute;left:${left}px;top:${top}px;z-index:2147483647;background:#23272b;color:#ff9800;padding:4px 8px;border-radius:6px;font-size:12px;box-shadow:0 0 8px rgba(255,152,0,0.7);cursor:pointer;transition:transform 0.2s;`;
     btn.addEventListener('mouseenter', () => { btn.style.transform = 'scale(1.05)'; });
     btn.addEventListener('mouseleave', () => { btn.style.transform = 'scale(1)'; });
-    // Use mousedown so selectionchange doesn't remove the button before the handler fires
     btn.addEventListener('mousedown', (e) => {
       e.preventDefault();
       removeSelectionButton();
       createRainbowModal(text);
     });
-    document.body.appendChild(btn);
     STATE.selBtn = btn;
   }
 

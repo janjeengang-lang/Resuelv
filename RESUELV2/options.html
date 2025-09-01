@@ -148,6 +148,37 @@
         color: #86efac;
         border-color: #22c55e;
       }
+
+      /* Custom prompts table and buttons */
+      #promptTable th,
+      #promptTable td {
+        border: 1px solid #334155;
+        padding: 8px;
+        text-align: left;
+      }
+
+      #promptTable th {
+        background: #1f2937;
+        color: #ffd600;
+      }
+
+      #promptTable tr:nth-child(even) {
+        background: rgba(255, 255, 255, 0.03);
+      }
+
+      textarea#promptText {
+        background: #0b1220;
+        border: 1px solid #334155;
+        color: #e2e8f0;
+        border-radius: 6px;
+        padding: 8px 12px;
+        resize: vertical;
+      }
+
+      .btn.small {
+        padding: 4px 10px;
+        font-size: 0.8em;
+      }
     </style>
   </head>
   <body class="page">
@@ -178,6 +209,11 @@
       <label class="row">
         <span>OCR.space API Key</span>
         <input id="ocrKey" type="password" placeholder="(optional)" />
+      </label>
+      <label class="row">
+        <span>IPQS API Key</span>
+        <input id="ipqsKey" type="password" placeholder="(optional)" />
+        <button id="testIpqs" type="button" class="btn small">Test</button>
       </label>
     </div>
 
@@ -214,6 +250,36 @@
           <option value="ara">Arabic (ara)</option>
         </select>
       </label>
+    </div>
+
+    <div class="group">
+      <div class="subtitle">Custom Prompts</div>
+      <form id="promptForm">
+        <label class="row">
+          <span>Name</span>
+          <input id="promptName" type="text" />
+        </label>
+        <label class="row">
+          <span>Tags</span>
+          <input id="promptTags" type="text" placeholder="comma,separated" />
+        </label>
+        <label class="row">
+          <span>Hotkey</span>
+          <input id="promptHotkey" type="text" placeholder="Ctrl+Shift+1" />
+        </label>
+        <label class="row">
+          <span>Prompt</span>
+          <textarea id="promptText" rows="3"></textarea>
+        </label>
+        <div class="row end">
+          <button id="savePrompt" type="button" class="btn primary">Save</button>
+          <button id="cancelPrompt" type="button" class="btn">Cancel</button>
+        </div>
+      </form>
+      <table id="promptTable" style="width:100%; margin-top:10px; border-collapse:collapse;">
+        <thead><tr><th>Name</th><th>Tags</th><th>Hotkey</th><th>Actions</th></tr></thead>
+        <tbody></tbody>
+      </table>
     </div>
 
     <div class="row end">

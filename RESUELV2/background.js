@@ -1,7 +1,7 @@
 // background.js (MV3 service worker)
 // - OpenRouter chat completions
 // - OCR via OCR.space
-// - Public IP via ipapi.co
+// - Public IP via IPQS with fallback services
 
 const DEFAULTS = {
   openrouterModel: 'google/gemini-2.0-flash-exp:free',
@@ -83,14 +83,41 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ ok: true, text });
           break;
         }
+        case 'CAPTURE_FULL_PAGE_OCR': {
+          const { tabId, ocrLang } = message;
+          const text = await captureFullPageOCR(tabId, ocrLang);
+          sendResponse(text);
+          break;
+        }
         case 'GET_PUBLIC_IP': {
           const info = await getPublicIP();
           sendResponse({ ok: true, info });
           break;
         }
+        case 'TEST_IPQS': {
+          const info = await testIPQS(message.key);
+          sendResponse(info);
+          break;
+        }
         case 'GET_TAB_ID': {
           const id = sender?.tab?.id || (await getActiveTabId());
           sendResponse({ ok: true, tabId: id });
+          break;
+        }
+        case 'RUN_CUSTOM_PROMPT': {
+          const { id, text } = message;
+          const { customPrompts = [] } = await chrome.storage.sync.get('customPrompts');
+          const pr = customPrompts.find(p => p.id === id);
+          if (!pr) { sendResponse({ ok: false, error: 'Prompt not found' }); break; }
+          const fullPrompt = pr.text + '\n\n' + text;
+          const result = await callOpenRouter(fullPrompt);
+          sendResponse({ ok: true, result, promptName: pr.name });
+          break;
+        }
+        case 'GENERATE_FAKE_INFO': {
+          const { gender, nat, force } = message;
+          const data = await fetchRandomUser({ gender, nat, force });
+          sendResponse({ ok: true, data });
           break;
         }
         default:
@@ -217,7 +244,71 @@ async function performOCR(imageDataUrl, lang) {
   return sanitize(text);
 }
 
+async function captureFullPageOCR(tabId, ocrLang) {
+  try {
+    const dims = await chrome.tabs.sendMessage(tabId, { type: 'GET_PAGE_DIMENSIONS' });
+    const shots = [];
+    for (let y = 0; y < dims.height; y += dims.viewHeight) {
+      await chrome.tabs.sendMessage(tabId, { type: 'SCROLL_TO', y });
+      await new Promise(r => setTimeout(r, 100));
+      shots.push(await chrome.tabs.captureVisibleTab({ format: 'png' }));
+    }
+    await chrome.tabs.sendMessage(tabId, { type: 'SCROLL_TO', y: 0 });
+    const stitched = await stitchImages(shots, dims.width, dims.height, dims.viewHeight);
+    const text = await performOCR(stitched, ocrLang);
+    return { ok: true, text };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+async function stitchImages(images, width, totalHeight, step) {
+  const canvas = new OffscreenCanvas(width, totalHeight);
+  const ctx = canvas.getContext('2d');
+  let y = 0;
+  for (const dataUrl of images) {
+    const blob = await (await fetch(dataUrl)).blob();
+    const bmp = await createImageBitmap(blob);
+    ctx.drawImage(bmp, 0, y);
+    y += step;
+  }
+  const blob = await canvas.convertToBlob();
+  return await blobToDataURL(blob);
+}
+
+function blobToDataURL(blob) {
+  return new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.readAsDataURL(blob);
+  });
+}
+
 async function getPublicIP() {
+  const { ipqsApiKey = '' } = await chrome.storage.local.get('ipqsApiKey');
+  if (ipqsApiKey) {
+    try {
+      const ipRes = await fetch('https://api.ipify.org?format=json');
+      const ipData = await ipRes.json();
+      const data = await fetchIPQS(ipData.ip, ipqsApiKey);
+      return {
+        ip: data?.ip_address || ipData.ip,
+        country: data?.country_code || data?.country_name || 'Unknown',
+        city: data?.city || 'Unknown',
+        postal: data?.postal_code || data?.zip_code || 'Unknown',
+        isp: data?.ISP || data?.organization || 'Unknown',
+        timezone: data?.timezone || 'Unknown',
+        fraud_score: data?.fraud_score,
+        proxy: data?.proxy,
+        vpn: data?.vpn,
+        tor: data?.tor,
+        raw: data
+      };
+    } catch (e) {
+      console.error('IPQS error:', e);
+    }
+  }
+
   const headers = {
     'Accept': 'application/json',
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -299,6 +390,51 @@ async function getPublicIP() {
     console.error('Fallback IP fetch error:', e);
   }
   throw new Error('Unable to retrieve IP information');
+}
+
+async function fetchIPQS(ip, key) {
+  const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
+  const lang = 'en';
+  const url = `https://www.ipqualityscore.com/api/json/ip/${key}/${ip}?user_agent=${encodeURIComponent(ua)}&user_language=${encodeURIComponent(lang)}&strictness=1&allow_public_access_points=true`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`IPQS API failed: ${res.status}`);
+  const data = await res.json();
+  if (data?.success === false) throw new Error(data.message || 'IPQS error');
+  return data;
+}
+
+async function testIPQS(key){
+  try {
+    const data = await fetchIPQS('8.8.8.8', key);
+    return { ok: true, data };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+async function fetchRandomUser({ gender = '', nat = '', force = false } = {}) {
+  const cacheKey = `fi_${gender || 'any'}_${nat || 'any'}`;
+  const { fakeCache = {} } = await chrome.storage.local.get('fakeCache');
+  if (!force) {
+    const entry = fakeCache[cacheKey];
+    if (entry && Date.now() - entry.ts < 5 * 60 * 1000) {
+      return entry.data;
+    }
+  }
+
+  const url = new URL('https://randomuser.me/api/');
+  if (gender) url.searchParams.set('gender', gender);
+  if (nat) url.searchParams.set('nat', nat);
+  url.searchParams.set('noinfo', '');
+
+  const res = await fetch(url.toString());
+  if (!res.ok) throw new Error(`RandomUser API failed: ${res.status}`);
+  const data = await res.json();
+  const user = data?.results?.[0];
+  if (!user) throw new Error('RandomUser returned no data');
+  fakeCache[cacheKey] = { ts: Date.now(), data: user };
+  await chrome.storage.local.set({ fakeCache });
+  return user;
 }
 
 function sanitize(s) {
