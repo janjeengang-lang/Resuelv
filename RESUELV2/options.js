@@ -7,7 +7,6 @@ const els = {
   cerebrasKey: document.getElementById('cerebrasKey'),
   ocrKey: document.getElementById('ocrKey'),
   ipdataKey: document.getElementById('ipdataKey'),
-  tempMailKey: document.getElementById('tempMailKey'),
   typingSpeed: document.getElementById('typingSpeed'),
   ocrLang: document.getElementById('ocrLang'),
   test: document.getElementById('test'),
@@ -42,7 +41,6 @@ async function load() {
       'cerebrasApiKey',
       'ocrApiKey',
       'ipdataApiKey',
-      'tempMailApiKey',
       'typingSpeed',
       'ocrLang',
     ]);
@@ -54,7 +52,6 @@ async function load() {
     els.cerebrasKey.value    = s.cerebrasApiKey || '';
     els.ocrKey.value         = s.ocrApiKey || '';
     els.ipdataKey.value      = s.ipdataApiKey || '';
-    els.tempMailKey.value    = s.tempMailApiKey || '';
     els.typingSpeed.value    = s.typingSpeed || 'normal';
     els.ocrLang.value        = s.ocrLang || 'eng';
 
@@ -169,7 +166,6 @@ els.save?.addEventListener('click', async () => {
       cerebrasApiKey:    els.cerebrasKey.value.trim(),
       ocrApiKey:         els.ocrKey.value.trim(),
       ipdataApiKey:      els.ipdataKey.value.trim(),
-      tempMailApiKey:    els.tempMailKey.value.trim(),
       typingSpeed:       els.typingSpeed.value,
       ocrLang:           els.ocrLang.value,
     });
