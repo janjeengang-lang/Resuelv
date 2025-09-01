@@ -6,9 +6,11 @@ const els = {
   geminiKey: document.getElementById('geminiKey'),
   cerebrasKey: document.getElementById('cerebrasKey'),
   ocrKey: document.getElementById('ocrKey'),
+  ipqsKey: document.getElementById('ipqsKey'),
   typingSpeed: document.getElementById('typingSpeed'),
   ocrLang: document.getElementById('ocrLang'),
   test: document.getElementById('test'),
+  testIpqs: document.getElementById('testIpqs'),
   save: document.getElementById('save'),
   clear: document.getElementById('clear'),
   status: document.getElementById('status'),
@@ -38,6 +40,7 @@ async function load() {
       'geminiApiKey',
       'cerebrasApiKey',
       'ocrApiKey',
+      'ipqsApiKey',
       'typingSpeed',
       'ocrLang',
     ]);
@@ -48,6 +51,7 @@ async function load() {
     els.geminiKey.value      = s.geminiApiKey || '';
     els.cerebrasKey.value    = s.cerebrasApiKey || '';
     els.ocrKey.value         = s.ocrApiKey || '';
+    els.ipqsKey.value        = s.ipqsApiKey || '';
     els.typingSpeed.value    = s.typingSpeed || 'normal';
     els.ocrLang.value        = s.ocrLang || 'eng';
 
@@ -161,6 +165,7 @@ els.save?.addEventListener('click', async () => {
       geminiApiKey:      els.geminiKey.value.trim(),
       cerebrasApiKey:    els.cerebrasKey.value.trim(),
       ocrApiKey:         els.ocrKey.value.trim(),
+      ipqsApiKey:        els.ipqsKey.value.trim(),
       typingSpeed:       els.typingSpeed.value,
       ocrLang:           els.ocrLang.value,
     });
@@ -192,6 +197,17 @@ els.test?.addEventListener('click', async () => {
   } catch (e) {
     notify(String(e?.message || e), true);
   }
+});
+
+els.testIpqs?.addEventListener('click', async () => {
+  try {
+    notify('Testing IPQS…');
+    const key = els.ipqsKey.value.trim();
+    if (!key) { notify('Enter API key', true); return; }
+    const res = await chrome.runtime.sendMessage({ type: 'TEST_IPQS', key });
+    if (!res?.ok) throw new Error(res?.error || 'IPQS failed');
+    notify('IPQS OK');
+  } catch (e) { notify(String(e?.message || e), true); }
 });
 
 load();

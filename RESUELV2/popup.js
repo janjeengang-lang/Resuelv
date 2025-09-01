@@ -291,7 +291,7 @@ async function loadIP(){
   try {
     const r = await chrome.runtime.sendMessage({ type:'GET_PUBLIC_IP' });
     if(!r?.ok) throw new Error(r?.error||'IP error');
-    const { ip, country, city, postal, isp, timezone } = r.info || {};
+    const { ip, country, city, postal, isp, timezone, fraud_score, proxy, vpn, tor } = r.info || {};
     els.ipInfoText.innerHTML = `
       <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
         <strong>IP:</strong> ${ip || 'Unknown'}
@@ -299,6 +299,7 @@ async function loadIP(){
       </div>
       <div><strong>Location:</strong> ${city || 'Unknown'}, ${country || 'Unknown'}</div>
       <div><strong>Postal:</strong> ${postal || 'Unknown'} | <strong>ISP:</strong> ${isp || 'Unknown'}</div>
+      <div><strong>Fraud:</strong> ${fraud_score ?? 'Unknown'} | <strong>Proxy:</strong> ${proxy ?? 'Unknown'} | <strong>VPN:</strong> ${vpn ?? 'Unknown'} | <strong>Tor:</strong> ${tor ?? 'Unknown'}</div>
       <div><strong>Timezone:</strong> ${timezone || 'Unknown'}</div>
     `;
   } catch(e){

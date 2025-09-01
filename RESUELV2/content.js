@@ -355,8 +355,7 @@
         try {
           const response = await chrome.runtime.sendMessage({ type: 'GET_PUBLIC_IP' });
           if (response.ok) {
-            const { ip, country, city, postal, isp, timezone } = response.info;
-            showIPModal(ip, country, city, postal, isp, timezone);
+            showIPModal(response.info);
           } else {
             showNotification('Failed to get IP information: ' + (response.error || 'Unknown error'));
           }
@@ -367,7 +366,14 @@
     }
   }
 
-  function showIPModal(ip, country, city, postal, isp, timezone) {
+  function showIPModal(info) {
+    const { ip, raw = {}, ...rest } = info || {};
+    const entries = { ...rest, ...raw };
+    delete entries.ip;
+    delete entries.raw;
+    const rows = Object.entries(entries)
+      .map(([k, v]) => `<div><strong style="color: #ffd600;">${k.replace(/_/g, ' ')}:</strong> ${v === undefined ? 'Unknown' : v}</div>`)
+      .join('');
     const modal = createStyledModal('IP Information', `
       <div style="background: linear-gradient(120deg, #120f12 80%, #0a0f17 100%); padding: 20px; border-radius: 10px; margin: 10px 0;">
         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
@@ -376,11 +382,7 @@
           <button onclick="navigator.clipboard.writeText('${ip || ''}')" style="background: #22c55e; border: none; color: white; padding: 5px 10px; border-radius: 5px; cursor: pointer; font-size: 12px;">Copy</button>
         </div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; color: #e2e8f0;">
-          <div><strong style="color: #ffd600;">Country:</strong> ${country || 'Unknown'}</div>
-          <div><strong style="color: #ffd600;">City:</strong> ${city || 'Unknown'}</div>
-          <div><strong style="color: #ffd600;">Postal:</strong> ${postal || 'Unknown'}</div>
-          <div><strong style="color: #ffd600;">ISP:</strong> ${isp || 'Unknown'}</div>
-          <div style="grid-column: 1 / -1;"><strong style="color: #ffd600;">Timezone:</strong> ${timezone || 'Unknown'}</div>
+          ${rows}
         </div>
       </div>
     `);
