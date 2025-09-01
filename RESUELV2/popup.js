@@ -9,6 +9,7 @@ const els = {
   ipInfoText: document.getElementById('ipInfoText'),
   btnCustomPrompt: document.getElementById('btnCustomPrompt'),
   btnUseLastPrompt: document.getElementById('btnUseLastPrompt'),
+  viewHistory: document.getElementById('viewHistory'),
 };
 
 const btnMap = {
@@ -67,6 +68,9 @@ for (const id of Object.keys(btnMap)) {
 updateButtonVisibility();
 
 els.openOptions?.addEventListener('click', () => chrome.runtime.openOptionsPage());
+els.viewHistory?.addEventListener('click', () => {
+  chrome.tabs.create({ url: chrome.runtime.getURL('history.html') });
+});
 
 
 async function handleMode(mode){
@@ -130,11 +134,8 @@ async function handleMode(mode){
 }
 
 function buildPrompt(mode, question, context){
-  const ctxLines = (context||[]).slice(-5).map((c,i)=>`Q${i+1}: ${c.q}\nA${i+1}: ${c.a}`).join('\n');
-  const rules = `You are answering a survey question. Use prior context if helpful.
-STRICT OUTPUT RULES:
-- Output ONLY the final answer; no extra words or punctuation unless part of the answer.
-- Language: match the question language.`;
+  const ctxLines = (context||[]).map((c,i)=>`Q${i+1}: ${c.q}\nA${i+1}: ${c.a}`).join('\n');
+  const rules = `You are answering a survey question. Use prior context if helpful and choose answers that keep the participant qualified for the survey.\nSTRICT OUTPUT RULES:\n- Output ONLY the final answer; no extra words or punctuation unless part of the answer.\n- Language: match the question language.`;
   const tasks = {
     open: 'Open-ended: write 1-3 short natural sentences.',
     mcq: 'Multiple Choice: return the EXACT option text from the provided question/options.',
@@ -181,7 +182,7 @@ async function getActiveTab(){ const tabs = await chrome.tabs.query({active:true
 async function ensureContentScript(tabId){ try{ await chrome.tabs.sendMessage(tabId,{type:'PING'});}catch{ await chrome.scripting.executeScript({target:{tabId}, files:['content.js']}); await chrome.tabs.sendMessage(tabId,{type:'PING'});} }
 async function getSelectedOrDomText(tabId){ const r = await chrome.tabs.sendMessage(tabId,{type:'GET_SELECTED_OR_DOM_TEXT'}); return r?.ok? r.text: ''; }
 async function getContext(){ const o = await chrome.storage.local.get('contextQA'); return o.contextQA||[]; }
-async function saveContext(entry){ const list = await getContext(); list.push(entry); while(list.length>5) list.shift(); await chrome.storage.local.set({contextQA:list}); }
+async function saveContext(entry){ const list = await getContext(); list.push(entry); while(list.length>50) list.shift(); await chrome.storage.local.set({contextQA:list}); }
 
 function notify(msg,isErr=false){ els.status.textContent = msg; els.status.className = 'status' + (isErr?' error':''); }
 function setBusy(on){ document.body.style.opacity = on? '0.8':'1'; }

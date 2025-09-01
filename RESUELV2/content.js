@@ -14,7 +14,8 @@
     currentAnswer: '',
     isTyping: false,
     selBtn: null,
-    lastFocused: null
+    lastFocused: null,
+    lastMouse: { x: 20, y: 20 }
   };
 
   let customPrompts = [];
@@ -191,6 +192,10 @@
             <span class="menu-icon">📷</span>
             <span class="menu-text">OCR Capture</span>
           </div>
+          <div class="menu-item" data-action="ocr-full">
+            <span class="menu-icon">🖼️</span>
+            <span class="menu-text">OCR Full Page</span>
+          </div>
           <div class="menu-item" data-action="write-last">
             <span class="menu-icon">✍️</span>
             <span class="menu-text">Write Last Answer</span>
@@ -338,6 +343,9 @@
     switch (action) {
       case 'ocr':
         startOCRCapture();
+        break;
+      case 'ocr-full':
+        startFullPageOCR();
         break;
       case 'write-last':
         try {
@@ -516,11 +524,29 @@
     });
   }
 
+  async function startFullPageOCR() {
+    try {
+      const { ocrLang = 'eng' } = await chrome.storage.local.get('ocrLang');
+      const response = await chrome.runtime.sendMessage({
+        type: 'CAPTURE_FULL_PAGE_OCR',
+        tabId: await getTabId(),
+        ocrLang
+      });
+      if (response?.ok) {
+        showOCRResultModal(response.text);
+      } else {
+        showNotification('OCR failed: ' + (response?.error || 'Unknown error'));
+      }
+    } catch (e) {
+      showNotification('OCR error: ' + e.message);
+    }
+  }
+
   function showOCRResultModal(extractedText) {
     const modal = createStyledModal('OCR Result', `
       <div style="background: linear-gradient(120deg, #120f12 80%, #0a0f17 100%); padding: 20px; border-radius: 10px; margin: 10px 0;">
         <p style="color: #e2e8f0; margin-bottom: 15px;">Extracted Text:</p>
-        <div style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; margin: 15px 0; max-height: 200px; overflow-y: auto;">
+        <div style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; margin: 15px 0; max-height: 300px; overflow-y: auto;">
           <pre style="color: #94a3b8; white-space: pre-wrap; font-size: 14px; margin: 0;">${extractedText}</pre>
         </div>
         <div style="display: flex; justify-content: center; gap: 10px; margin-top: 20px;">
@@ -808,8 +834,10 @@
       .modal-body {
         padding: 20px;
         color: #e2e8f0;
+        max-height: 70vh;
+        overflow-y: auto;
       }
-      
+
       .question-text {
         background: rgba(0,0,0,0.2);
         padding: 15px;
@@ -817,14 +845,18 @@
         margin-bottom: 20px;
         font-style: italic;
         border-left: 4px solid #feca57;
+        max-height: 200px;
+        overflow-y: auto;
       }
-      
+
       .answer-container {
         background: rgba(255,255,255,0.1);
         padding: 15px;
         border-radius: 10px;
         margin-bottom: 20px;
         min-height: 60px;
+        max-height: 300px;
+        overflow-y: auto;
       }
       
       .loading {
@@ -1018,8 +1050,8 @@
   }
 
   function buildPrompt(mode, question, context) {
-    const ctxLines = (context || []).slice(-5).map((c, i) => `Q${i + 1}: ${c.q}\nA${i + 1}: ${c.a}`).join('\n');
-    const rules = `You are answering a survey question. Use prior context if helpful.\nSTRICT OUTPUT RULES:\n- Output ONLY the final answer; no extra words or punctuation unless part of the answer.\n- Language: match the question language.`;
+    const ctxLines = (context || []).map((c, i) => `Q${i + 1}: ${c.q}\nA${i + 1}: ${c.a}`).join('\n');
+    const rules = `You are answering a survey question. Use prior context if helpful and choose answers that keep the participant qualified for the survey.\nSTRICT OUTPUT RULES:\n- Output ONLY the final answer; no extra words or punctuation unless part of the answer.\n- Language: match the question language.`;
     const tasks = {
       open: 'Open-ended: write 1-3 short natural sentences.',
       mcq: 'Multiple Choice: return the EXACT option text from the provided question/options.',
@@ -1039,7 +1071,7 @@
   async function saveContext(entry) {
     const list = await getContext();
     list.push(entry);
-    while (list.length > 5) list.shift();
+    while (list.length > 50) list.shift();
     await chrome.storage.local.set({ contextQA: list });
   }
 
@@ -1073,6 +1105,15 @@
           }
           case 'SHOW_RESUELV_MODAL': {
             createRainbowModal(msg.text);
+            sendResponse({ ok: true });
+            break;
+          }
+          case 'GET_PAGE_DIMENSIONS': {
+            sendResponse({ ok: true, width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight, viewHeight: window.innerHeight });
+            break;
+          }
+          case 'SCROLL_TO': {
+            window.scrollTo(0, msg.y || 0);
             sendResponse({ ok: true });
             break;
           }
@@ -1203,11 +1244,17 @@
     showNotification('Human typing mode toggled');
   }
 
-  function handleSelection() {
+  function handleSelection(e) {
+    if (e && e.type === 'mouseup') {
+      STATE.lastMouse = { x: e.clientX, y: e.clientY };
+    }
     const sel = window.getSelection();
     const text = sel && sel.toString ? sel.toString().trim() : '';
     if (text) {
-      const rect = sel.getRangeAt(0).getBoundingClientRect();
+      let rect = sel.getRangeAt(0).getBoundingClientRect();
+      if (!(rect.width || rect.height)) {
+        rect = { top: STATE.lastMouse.y, right: STATE.lastMouse.x, bottom: STATE.lastMouse.y, left: STATE.lastMouse.x };
+      }
       showSelectionButton(rect, text);
     } else {
       removeSelectionButton();
@@ -1219,16 +1266,21 @@
     const btn = document.createElement('div');
     btn.id = 'resuelv-gen-btn';
     btn.textContent = 'Generate Answer';
-    btn.style.cssText = `position:absolute;left:${window.scrollX + rect.right + 5}px;top:${window.scrollY + rect.top - 30}px;z-index:2147483647;background:#23272b;color:#ff9800;padding:4px 8px;border-radius:6px;font-size:12px;box-shadow:0 0 8px rgba(255,152,0,0.7);cursor:pointer;transition:transform 0.2s;`;
+    document.body.appendChild(btn);
+    const btnWidth = btn.offsetWidth || 120;
+    const btnHeight = btn.offsetHeight || 24;
+    let left = window.scrollX + rect.right + 5;
+    let top = window.scrollY + rect.top - 30;
+    left = Math.min(window.scrollX + window.innerWidth - btnWidth - 10, Math.max(window.scrollX + 10, left));
+    top = Math.min(window.scrollY + window.innerHeight - btnHeight - 10, Math.max(window.scrollY + 10, top));
+    btn.style.cssText = `position:absolute;left:${left}px;top:${top}px;z-index:2147483647;background:#23272b;color:#ff9800;padding:4px 8px;border-radius:6px;font-size:12px;box-shadow:0 0 8px rgba(255,152,0,0.7);cursor:pointer;transition:transform 0.2s;`;
     btn.addEventListener('mouseenter', () => { btn.style.transform = 'scale(1.05)'; });
     btn.addEventListener('mouseleave', () => { btn.style.transform = 'scale(1)'; });
-    // Use mousedown so selectionchange doesn't remove the button before the handler fires
     btn.addEventListener('mousedown', (e) => {
       e.preventDefault();
       removeSelectionButton();
       createRainbowModal(text);
     });
-    document.body.appendChild(btn);
     STATE.selBtn = btn;
   }
 

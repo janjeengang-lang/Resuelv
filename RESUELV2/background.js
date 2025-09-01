@@ -83,6 +83,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ ok: true, text });
           break;
         }
+        case 'CAPTURE_FULL_PAGE_OCR': {
+          const { tabId, ocrLang } = message;
+          const text = await captureFullPageOCR(tabId, ocrLang);
+          sendResponse(text);
+          break;
+        }
         case 'GET_PUBLIC_IP': {
           const info = await getPublicIP();
           sendResponse({ ok: true, info });
@@ -230,6 +236,46 @@ async function performOCR(imageDataUrl, lang) {
   const data = await res.json();
   const text = data?.ParsedResults?.[0]?.ParsedText || '';
   return sanitize(text);
+}
+
+async function captureFullPageOCR(tabId, ocrLang) {
+  try {
+    const dims = await chrome.tabs.sendMessage(tabId, { type: 'GET_PAGE_DIMENSIONS' });
+    const shots = [];
+    for (let y = 0; y < dims.height; y += dims.viewHeight) {
+      await chrome.tabs.sendMessage(tabId, { type: 'SCROLL_TO', y });
+      await new Promise(r => setTimeout(r, 100));
+      shots.push(await chrome.tabs.captureVisibleTab({ format: 'png' }));
+    }
+    await chrome.tabs.sendMessage(tabId, { type: 'SCROLL_TO', y: 0 });
+    const stitched = await stitchImages(shots, dims.width, dims.height, dims.viewHeight);
+    const text = await performOCR(stitched, ocrLang);
+    return { ok: true, text };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+async function stitchImages(images, width, totalHeight, step) {
+  const canvas = new OffscreenCanvas(width, totalHeight);
+  const ctx = canvas.getContext('2d');
+  let y = 0;
+  for (const dataUrl of images) {
+    const blob = await (await fetch(dataUrl)).blob();
+    const bmp = await createImageBitmap(blob);
+    ctx.drawImage(bmp, 0, y);
+    y += step;
+  }
+  const blob = await canvas.convertToBlob();
+  return await blobToDataURL(blob);
+}
+
+function blobToDataURL(blob) {
+  return new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.readAsDataURL(blob);
+  });
 }
 
 async function getPublicIP() {
