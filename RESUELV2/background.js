@@ -120,6 +120,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ ok: true, data });
           break;
         }
+        case 'TEMP_MAIL_CREATE': {
+          const data = await createTempEmail();
+          sendResponse(data);
+          break;
+        }
+        case 'TEMP_MAIL_MESSAGES': {
+          const data = await checkTempInbox();
+          sendResponse(data);
+          break;
+        }
+        case 'TEMP_MAIL_DELETE': {
+          clearTempMail();
+          sendResponse({ ok: true });
+          break;
+        }
         default:
           sendResponse({ ok: false, error: 'Unknown message type' });
       }
@@ -248,9 +263,11 @@ async function captureFullPageOCR(tabId, ocrLang) {
   try {
     const dims = await chrome.tabs.sendMessage(tabId, { type: 'GET_PAGE_DIMENSIONS' });
     const shots = [];
-    for (let y = 0; y < dims.height; y += dims.viewHeight) {
+    const steps = Math.ceil(dims.height / dims.viewHeight);
+    for (let i = 0; i < steps; i++) {
+      const y = Math.min(i * dims.viewHeight, dims.height - dims.viewHeight);
       await chrome.tabs.sendMessage(tabId, { type: 'SCROLL_TO', y });
-      await new Promise(r => setTimeout(r, 100));
+      await new Promise(r => setTimeout(r, 250));
       shots.push(await chrome.tabs.captureVisibleTab({ format: 'png' }));
     }
     await chrome.tabs.sendMessage(tabId, { type: 'SCROLL_TO', y: 0 });
@@ -410,6 +427,44 @@ async function testIPQS(key){
   } catch (e) {
     return { ok: false, error: e.message };
   }
+}
+
+const TEMP_MAIL_BASE = 'https://hub.juheapi.com/temp_mail/v1';
+let tempMailId = null;
+
+async function createTempEmail() {
+  try {
+    const { tempMailApiKey = '' } = await chrome.storage.local.get('tempMailApiKey');
+    if (!tempMailApiKey) throw new Error('Missing Temp Mail API key');
+    const url = `${TEMP_MAIL_BASE}/create?key=${tempMailApiKey}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (data.code !== '0' || !data.data) throw new Error(data.msg || 'API error');
+    tempMailId = data.data.id;
+    return { ok: true, email: data.data.email, id: tempMailId };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+async function checkTempInbox() {
+  try {
+    if (!tempMailId) throw new Error('No email address generated yet');
+    const { tempMailApiKey = '' } = await chrome.storage.local.get('tempMailApiKey');
+    const url = `${TEMP_MAIL_BASE}/messages?key=${tempMailApiKey}&id=${tempMailId}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (data.code !== '0') return { ok: true, messages: [] };
+    return { ok: true, messages: data.data || [] };
+  } catch (e) {
+    return { ok: false, error: e.message, messages: [] };
+  }
+}
+
+function clearTempMail(){
+  tempMailId = null;
 }
 
 async function fetchRandomUser({ gender = '', nat = '', force = false } = {}) {

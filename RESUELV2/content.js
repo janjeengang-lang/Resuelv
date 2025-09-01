@@ -1,3 +1,4 @@
+--- START OF FILE src/content.js ---
 // content.js
 // - Extract selected text or from DOM
 // - Overlay to select OCR region
@@ -212,6 +213,10 @@
             <span class="menu-icon">👤</span>
             <span class="menu-text">Generate Fake Info</span>
           </div>
+          <div class="menu-item" data-action="temp-mail">
+            <span class="menu-icon">📧</span>
+            <span class="menu-text">Temp Email</span>
+          </div>
         </div>
       </div>
     `;
@@ -378,6 +383,9 @@
       case 'fake-info':
         showFakeInfoModal();
         break;
+      case 'temp-mail':
+        showTempMailModal();
+        break;
     }
   }
 
@@ -411,7 +419,10 @@
           <option value="male">Male</option>
           <option value="female">Female</option>
         </select>
-        <input id="fiNat" placeholder="Nationality (e.g., US)" style="flex:1; padding:6px; border-radius:6px; background:#0b1220; color:#e2e8f0; border:1px solid #334155;" />
+        <select id="fiNat" style="flex:1; padding:6px; border-radius:6px; background:#0b1220; color:#e2e8f0; border:1px solid #334155;">
+          <option value="">Any Nationality</option>
+          ${['AU','BR','CA','CH','DE','DK','ES','FI','FR','GB','IE','IR','NO','NL','NZ','TR','US'].map(c=>`<option value="${c.toLowerCase()}">${c}</option>`).join('')}
+        </select>
         <button id="fiGenerate" style="background:linear-gradient(45deg,#4ecdc4,#44a08d); border:none; color:#fff; padding:6px 12px; border-radius:6px; cursor:pointer;">Generate</button>
       </div>
       <div id="fiResult" style="display:none;"></div>
@@ -421,7 +432,7 @@
     async function generate(force=false){
       try {
         const gender = modal.querySelector('#fiGender').value;
-        const nat = modal.querySelector('#fiNat').value.trim();
+        const nat = modal.querySelector('#fiNat').value;
         const resp = await chrome.runtime.sendMessage({ type:'GENERATE_FAKE_INFO', gender, nat, force });
         if (!resp?.ok) throw new Error(resp?.error || 'Failed');
         render(resp.data);
@@ -480,6 +491,86 @@
     }
 
     modal.querySelector('#fiGenerate').addEventListener('click', () => generate(false));
+  }
+
+  async function showTempMailModal() {
+    let currentEmail = '';
+    const content = `
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <button id="tmGenerate" style="background:linear-gradient(45deg,#4ecdc4,#44a08d);border:none;color:#fff;padding:8px 12px;border-radius:6px;cursor:pointer;">Generate Email</button>
+        <div id="tmEmailRow" style="display:none; align-items:center; gap:8px;">
+          <input id="tmEmail" readonly style="flex:1; padding:6px; border-radius:6px; background:#0b1220; color:#e2e8f0; border:1px solid #334155;"/>
+          <button id="tmCopy" style="background:#22c55e;border:none;color:#fff;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:12px;">Copy</button>
+        </div>
+        <div style="display:flex; gap:10px;">
+          <button id="tmRefresh" style="display:none; flex:1; background:linear-gradient(45deg,#ff6b6b,#feca57); border:none;color:#fff;padding:8px 12px;border-radius:6px;cursor:pointer;">Refresh Inbox</button>
+          <button id="tmDelete" style="display:none; flex:1; background:linear-gradient(45deg,#feca57,#ff9ff3); border:none;color:#fff;padding:8px 12px;border-radius:6px;cursor:pointer;">Delete</button>
+        </div>
+        <div id="tmStatus" style="min-height:20px;color:#ffd600;"></div>
+        <div id="tmMessages" style="max-height:200px;overflow-y:auto;"></div>
+      </div>`;
+    const modal = createStyledModal('Temp Email', content);
+
+    const genBtn = modal.querySelector('#tmGenerate');
+    const emailRow = modal.querySelector('#tmEmailRow');
+    const emailField = modal.querySelector('#tmEmail');
+    const copyBtn = modal.querySelector('#tmCopy');
+    const refreshBtn = modal.querySelector('#tmRefresh');
+    const delBtn = modal.querySelector('#tmDelete');
+    const statusEl = modal.querySelector('#tmStatus');
+    const listEl = modal.querySelector('#tmMessages');
+
+    function setStatus(t){ statusEl.textContent = t; }
+
+    genBtn.addEventListener('click', async () => {
+      setStatus('Generating...');
+      const res = await chrome.runtime.sendMessage({ type:'TEMP_MAIL_CREATE' });
+      if(res?.ok){
+        currentEmail = res.email;
+        emailField.value = currentEmail;
+        emailRow.style.display = 'flex';
+        refreshBtn.style.display = 'block';
+        delBtn.style.display = 'block';
+        setStatus('Email generated!');
+      } else {
+        setStatus('Error: '+(res?.error||'failed'));
+      }
+    });
+
+    copyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(currentEmail || '');
+      setStatus('Copied');
+    });
+
+    refreshBtn.addEventListener('click', async () => {
+      setStatus('Checking inbox...');
+      const res = await chrome.runtime.sendMessage({ type:'TEMP_MAIL_MESSAGES' });
+      if(res?.ok){
+        const msgs = res.messages || [];
+        if(!msgs.length){
+          listEl.innerHTML = '<em>No messages</em>';
+        } else {
+          listEl.innerHTML = msgs.map(m=>`<div style="padding:6px;border-bottom:1px solid #334155;">
+            <div><strong>${m.from || 'Unknown'}</strong></div>
+            <div>${m.subject || ''}</div>
+            <div style="font-size:12px;opacity:0.8;">${(m.text || '').slice(0,80)}</div>
+          </div>`).join('');
+        }
+        setStatus('Inbox updated');
+      } else {
+        setStatus('Error: '+(res?.error||'failed'));
+      }
+    });
+
+    delBtn.addEventListener('click', async () => {
+      await chrome.runtime.sendMessage({ type:'TEMP_MAIL_DELETE' });
+      currentEmail='';
+      emailRow.style.display='none';
+      refreshBtn.style.display='none';
+      delBtn.style.display='none';
+      listEl.innerHTML='';
+      setStatus('Deleted');
+    });
   }
 
   function showLastAnswerModal(answer) {
@@ -636,18 +727,21 @@
         <div style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; margin: 15px 0; max-height: 300px; overflow-y: auto;">
           <pre style="color: #94a3b8; white-space: pre-wrap; font-size: 14px; margin: 0;">${extractedText}</pre>
         </div>
-        <div style="display: flex; justify-content: center; gap: 10px; margin-top: 20px;">
+        <div style="display: flex; justify-content: center; gap: 10px; margin-top: 20px; flex-wrap: wrap;">
           <button id="sendToAI" style="background: linear-gradient(45deg, #ff6b6b, #4ecdc4); border: none; color: white; padding: 10px 20px; border-radius: 25px; cursor: pointer; font-weight: bold;">Send to AI</button>
+          <button id="useOCRPrompt" style="background: linear-gradient(45deg, #ffd600, #ff9800); border: none; color: #181c20; padding: 10px 20px; border-radius: 25px; cursor: pointer; font-weight: bold;">Use Custom Prompt</button>
+          <button id="useOCRLast" style="background: linear-gradient(45deg, #4ecdc4, #44a08d); border: none; color: white; padding: 10px 20px; border-radius: 25px; cursor: pointer; font-weight: bold;">Use Last Custom</button>
           <button id="retakeOCR" style="background: linear-gradient(45deg, #feca57, #ff9ff3); border: none; color: white; padding: 10px 20px; border-radius: 25px; cursor: pointer; font-weight: bold;">Retake</button>
         </div>
       </div>
     `);
 
-    // Add event listeners
     setTimeout(() => {
       const sendBtn = document.getElementById('sendToAI');
       const retakeBtn = document.getElementById('retakeOCR');
-      
+      const prBtn = document.getElementById('useOCRPrompt');
+      const lastBtn = document.getElementById('useOCRLast');
+
       if (sendBtn) {
         sendBtn.addEventListener('click', () => {
           const modal = document.getElementById('resuelv-styled-modal');
@@ -655,12 +749,34 @@
           createRainbowModal(extractedText);
         });
       }
-      
+
       if (retakeBtn) {
         retakeBtn.addEventListener('click', () => {
           const modal = document.getElementById('resuelv-styled-modal');
           if (modal) modal.remove();
           startOCRCapture();
+        });
+      }
+
+      if (prBtn) {
+        prBtn.addEventListener('click', () => {
+          const modal = document.getElementById('resuelv-styled-modal');
+          if (modal) modal.remove();
+          createRainbowModal(extractedText, null, true);
+          openPromptSelector(extractedText);
+        });
+      }
+
+      if (lastBtn) {
+        lastBtn.addEventListener('click', async () => {
+          const { lastCustomPromptId } = await chrome.storage.local.get('lastCustomPromptId');
+          if (!lastCustomPromptId) {
+            showNotification('No last custom prompt');
+            return;
+          }
+          const modal = document.getElementById('resuelv-styled-modal');
+          if (modal) modal.remove();
+          createRainbowModal(extractedText, lastCustomPromptId);
         });
       }
     }, 100);
@@ -812,7 +928,7 @@
     }, 3000);
   }
 
-  function createRainbowModal(selectedText, customPromptId = null) {
+  function createRainbowModal(selectedText, customPromptId = null, skipGenerate = false) {
     if (STATE.modal) return;
 
     const modal = document.createElement('div');
@@ -1004,8 +1120,11 @@
       if (e.target === modal) closeModal();
     });
 
-    // Generate answer
-    generateAnswer(selectedText, customPromptId);
+    if (!skipGenerate) {
+      generateAnswer(selectedText, customPromptId);
+    } else {
+      modal.querySelector('.loading').textContent = 'Select a prompt to generate...';
+    }
   }
 
   async function generateAnswer(questionText, customPromptId = null) {
@@ -1053,7 +1172,6 @@
       }
 
       // Save context
-      // Save the specific prompt name for better context tracking.
       await saveContext({ q: questionText, a: answer, promptName });
 
     } catch (e) {
@@ -1358,6 +1476,10 @@
     const btnHeight = btn.offsetHeight || 24;
     let left = window.scrollX + rect.right + 5;
     let top = window.scrollY + rect.top - 30;
+    if (!rect.width && !rect.height) {
+      left = window.scrollX + (STATE.lastMouse.x || window.innerWidth / 2);
+      top = window.scrollY + (STATE.lastMouse.y || window.innerHeight / 2) - 30;
+    }
     left = Math.min(window.scrollX + window.innerWidth - btnWidth - 10, Math.max(window.scrollX + 10, left));
     top = Math.min(window.scrollY + window.innerHeight - btnHeight - 10, Math.max(window.scrollY + 10, top));
     btn.style.cssText = `position:absolute;left:${left}px;top:${top}px;z-index:2147483647;background:#23272b;color:#ff9800;padding:4px 8px;border-radius:6px;font-size:12px;box-shadow:0 0 8px rgba(255,152,0,0.7);cursor:pointer;transition:transform 0.2s;`;
@@ -1375,7 +1497,7 @@
     if (STATE.selBtn) { STATE.selBtn.remove(); STATE.selBtn = null; }
   }
 
-  document.addEventListener('mouseup', handleSelection);
+  document.addEventListener('mouseup', (e)=>{ STATE.lastMouse = { x: e.clientX, y: e.clientY }; handleSelection(); });
   document.addEventListener('keyup', handleSelection);
   // Removed selectionchange to ensure Generate button remains clickable
   document.addEventListener('mousedown', (e) => {
@@ -1405,3 +1527,4 @@
   document.head.appendChild(globalStyle);
 
 })();
+--- END OF FILE src/content.js ---

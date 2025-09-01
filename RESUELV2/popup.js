@@ -1,3 +1,4 @@
+--- START OF FILE src/popup.js ---
 // popup.js
 const els = {
   status: document.getElementById('status'),
@@ -112,13 +113,10 @@ async function handleMode(mode){
       questionText = ocr.text;
       if (!questionText) throw new Error('OCR returned empty text');
     }
-
     lastQuestion = questionText;
-
-    const ctx   = await getContext();
-    const prompt= buildPrompt(mode, questionText, ctx);
-    const gen   = await chrome.runtime.sendMessage({ type:'GEMINI_GENERATE', prompt });
-
+    const ctx = await getContext();
+    const prompt = buildPrompt(mode, questionText, ctx);
+    const gen = await chrome.runtime.sendMessage({ type:'GEMINI_GENERATE', prompt });
     if (!gen?.ok) throw new Error(gen?.error||'Generate failed');
 
     const answer = postProcess(mode, gen.result);
@@ -200,11 +198,9 @@ els.btnWrite?.addEventListener('click', async () => {
   } catch(e){ notify('Type failed: '+(e?.message||e), true); }
 });
 
-// Modal selector for custom prompt
 async function choosePromptModal(){
   const { customPrompts=[] } = await chrome.storage.sync.get('customPrompts');
   if(!customPrompts.length){ notify('No custom prompts', true); return null; }
-
   return new Promise(resolve => {
     const overlay = document.createElement('div');
     overlay.id = 'prompt-modal';
@@ -234,40 +230,33 @@ async function choosePromptModal(){
       #prompt-modal .pm-actions button:hover{filter:brightness(1.1);} 
       #prompt-modal .pm-run{background:#22c55e;border-color:#22c55e;color:#0b1215;font-weight:600;}
     `;
-
-    document.body.appendChild(overlay);
-    document.head.appendChild(style);
-
+    document.body.appendChild(overlay); document.head.appendChild(style);
     const listEl = overlay.querySelector('.pm-list');
     let filtered = [...customPrompts];
     let selectedId = null;
-
     const render = () => {
-      listEl.innerHTML = filtered.map(p => `<div class="pm-item" data-id="${p.id}">${p.name}</div>`).join('');
-      listEl.querySelectorAll('.pm-item').forEach(it => {
-        it.addEventListener('click', () => {
+      listEl.innerHTML = filtered.map(p=>`<div class="pm-item" data-id="${p.id}">${p.name}</div>`).join('');
+      listEl.querySelectorAll('.pm-item').forEach(it=>{
+        it.addEventListener('click',()=>{
           selectedId = it.dataset.id;
-          listEl.querySelectorAll('.pm-item').forEach(x => x.classList.remove('selected'));
+          listEl.querySelectorAll('.pm-item').forEach(x=>x.classList.remove('selected'));
           it.classList.add('selected');
         });
       });
     };
     render();
-
-    overlay.querySelector('#pmFilter').addEventListener('input', e => {
+    overlay.querySelector('#pmFilter').addEventListener('input', e=>{
       const tag = e.target.value.trim();
-      filtered = customPrompts.filter(p => !tag || (p.tags||[]).includes(tag));
-      selectedId = null;
-      render();
+      filtered = customPrompts.filter(p=>!tag || (p.tags||[]).includes(tag));
+      selectedId = null; render();
     });
-
     function close(){ overlay.remove(); style.remove(); }
-    overlay.querySelector('.pm-close') .addEventListener('click', () => { close(); resolve(null); });
-    overlay.querySelector('.pm-cancel').addEventListener('click', () => { close(); resolve(null); });
-    overlay.addEventListener('click', e => { if (e.target === overlay) { close(); resolve(null); } });
-    overlay.querySelector('.pm-run').addEventListener('click', () => {
-      const pr = customPrompts.find(p => p.id === selectedId);
-      if (!pr) { notify('Select a prompt', true); return; }
+    overlay.querySelector('.pm-close').addEventListener('click',()=>{ close(); resolve(null); });
+    overlay.querySelector('.pm-cancel').addEventListener('click',()=>{ close(); resolve(null); });
+    overlay.addEventListener('click',e=>{ if(e.target===overlay){ close(); resolve(null);} });
+    overlay.querySelector('.pm-run').addEventListener('click',()=>{
+      const pr = customPrompts.find(p=>p.id===selectedId);
+      if(!pr){ notify('Select a prompt', true); return; }
       close(); resolve(pr);
     });
   });
@@ -275,15 +264,15 @@ async function choosePromptModal(){
 
 els.btnCustomPrompt?.addEventListener('click', async () => {
   const pr = await choosePromptModal();
-  if (pr) runCustomPrompt(pr);
+  if(pr) runCustomPrompt(pr);
 });
 
 els.btnUseLastPrompt?.addEventListener('click', async () => {
   const { lastCustomPromptId } = await chrome.storage.local.get('lastCustomPromptId');
-  if (!lastCustomPromptId) { notify('No last prompt', true); return; }
+  if(!lastCustomPromptId){ notify('No last prompt', true); return; }
   const { customPrompts=[] } = await chrome.storage.sync.get('customPrompts');
-  const pr = customPrompts.find(p => p.id === lastCustomPromptId);
-  if (!pr) { notify('Prompt missing', true); return; }
+  const pr = customPrompts.find(p=>p.id===lastCustomPromptId);
+  if(!pr){ notify('Prompt missing', true); return; }
   runCustomPrompt(pr);
 });
 
@@ -291,7 +280,8 @@ async function loadIP(){
   try {
     const r = await chrome.runtime.sendMessage({ type:'GET_PUBLIC_IP' });
     if(!r?.ok) throw new Error(r?.error||'IP error');
-    const { ip, country, city, postal, isp, timezone, fraud_score, proxy, vpn, tor } = r.info || {};
+    // Merged both `ipdata` and `ipqs` data fields to provide a comprehensive view.
+    const { ip, country, city, postal, isp, timezone, proxy, vpn, tor, is_anonymous, fraud_score } = r.info || {};
     els.ipInfoText.innerHTML = `
       <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
         <strong>IP:</strong> ${ip || 'Unknown'}
@@ -299,7 +289,8 @@ async function loadIP(){
       </div>
       <div><strong>Location:</strong> ${city || 'Unknown'}, ${country || 'Unknown'}</div>
       <div><strong>Postal:</strong> ${postal || 'Unknown'} | <strong>ISP:</strong> ${isp || 'Unknown'}</div>
-      <div><strong>Fraud:</strong> ${fraud_score ?? 'Unknown'} | <strong>Proxy:</strong> ${proxy ?? 'Unknown'} | <strong>VPN:</strong> ${vpn ?? 'Unknown'} | <strong>Tor:</strong> ${tor ?? 'Unknown'}</div>
+      <div><strong>Proxy:</strong> ${proxy ?? 'Unknown'} | <strong>VPN:</strong> ${vpn ?? 'Unknown'} | <strong>Tor:</strong> ${tor ?? 'Unknown'}</div>
+      <div><strong>Fraud:</strong> ${fraud_score ?? 'Unknown'} | <strong>Anonymous:</strong> ${is_anonymous ?? 'Unknown'}</div>
       <div><strong>Timezone:</strong> ${timezone || 'Unknown'}</div>
     `;
   } catch(e){
@@ -312,7 +303,5 @@ function renderHistory(list){
   els.history.textContent = items || 'No history';
 }
 
-(async function init(){
-  renderHistory(await getContext());
-  loadIP();
-})();
+(async function init(){ renderHistory(await getContext()); loadIP(); })();
+--- END OF FILE src/popup.js ---
