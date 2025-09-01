@@ -326,6 +326,17 @@
             max-height: 120px;
             overflow-y: auto;
         }
+
+        .small-btn {
+            margin-top: 8px;
+            background: linear-gradient(45deg, #4ecdc4, #44a08d);
+            border: none;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+        }
     </style>
 </head>
 
@@ -388,6 +399,10 @@
                 <button id="btnCopy" class="btn">Copy</button>
                 <button id="btnReset" class="btn" style="background: #dc2626; border-color: #dc2626;">Reset Context</button>
             </div>
+            <div class="row">
+                <button id="btnCustomPrompt" class="btn">Use Custom Prompt</button>
+                <button id="btnUseLastPrompt" class="btn">Use Last Custom</button>
+            </div>
         </div>
 
         <!-- IP Info Section -->
@@ -402,6 +417,7 @@
         <div class="group">
             <div class="subtitle">History (last 5)</div>
             <div id="history">No history available</div>
+            <button id="viewHistory" class="small-btn">View full history</button>
         </div>
     </div>
 
