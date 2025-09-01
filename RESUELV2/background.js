@@ -1,7 +1,7 @@
 // background.js (MV3 service worker)
 // - OpenRouter chat completions
 // - OCR via OCR.space
-// - Public IP via ipapi.co
+// - Public IP via IPQS with fallback services
 
 const DEFAULTS = {
   openrouterModel: 'google/gemini-2.0-flash-exp:free',
@@ -88,9 +88,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ ok: true, info });
           break;
         }
+        case 'TEST_IPQS': {
+          const info = await testIPQS(message.key);
+          sendResponse(info);
+          break;
+        }
         case 'GET_TAB_ID': {
           const id = sender?.tab?.id || (await getActiveTabId());
           sendResponse({ ok: true, tabId: id });
+          break;
+        }
+        case 'RUN_CUSTOM_PROMPT': {
+          const { id, text } = message;
+          const { customPrompts = [] } = await chrome.storage.sync.get('customPrompts');
+          const pr = customPrompts.find(p => p.id === id);
+          if (!pr) { sendResponse({ ok: false, error: 'Prompt not found' }); break; }
+          const fullPrompt = pr.text + '\n\n' + text;
+          const result = await callOpenRouter(fullPrompt);
+          sendResponse({ ok: true, result, promptName: pr.name });
           break;
         }
         default:
@@ -218,6 +233,30 @@ async function performOCR(imageDataUrl, lang) {
 }
 
 async function getPublicIP() {
+  const { ipqsApiKey = '' } = await chrome.storage.local.get('ipqsApiKey');
+  if (ipqsApiKey) {
+    try {
+      const ipRes = await fetch('https://api.ipify.org?format=json');
+      const ipData = await ipRes.json();
+      const data = await fetchIPQS(ipData.ip, ipqsApiKey);
+      return {
+        ip: data?.ip_address || ipData.ip,
+        country: data?.country_code || data?.country_name || 'Unknown',
+        city: data?.city || 'Unknown',
+        postal: data?.postal_code || data?.zip_code || 'Unknown',
+        isp: data?.ISP || data?.organization || 'Unknown',
+        timezone: data?.timezone || 'Unknown',
+        fraud_score: data?.fraud_score,
+        proxy: data?.proxy,
+        vpn: data?.vpn,
+        tor: data?.tor,
+        raw: data
+      };
+    } catch (e) {
+      console.error('IPQS error:', e);
+    }
+  }
+
   const headers = {
     'Accept': 'application/json',
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -299,6 +338,26 @@ async function getPublicIP() {
     console.error('Fallback IP fetch error:', e);
   }
   throw new Error('Unable to retrieve IP information');
+}
+
+async function fetchIPQS(ip, key) {
+  const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
+  const lang = 'en';
+  const url = `https://www.ipqualityscore.com/api/json/ip/${key}/${ip}?user_agent=${encodeURIComponent(ua)}&user_language=${encodeURIComponent(lang)}&strictness=1&allow_public_access_points=true`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`IPQS API failed: ${res.status}`);
+  const data = await res.json();
+  if (data?.success === false) throw new Error(data.message || 'IPQS error');
+  return data;
+}
+
+async function testIPQS(key){
+  try {
+    const data = await fetchIPQS('8.8.8.8', key);
+    return { ok: true, data };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
 }
 
 function sanitize(s) {

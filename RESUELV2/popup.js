@@ -7,6 +7,8 @@ const els = {
   openOptions: document.getElementById('openOptions'),
   history: document.getElementById('history'),
   ipInfoText: document.getElementById('ipInfoText'),
+  btnCustomPrompt: document.getElementById('btnCustomPrompt'),
+  btnUseLastPrompt: document.getElementById('btnUseLastPrompt'),
 };
 
 const btnMap = {
@@ -19,6 +21,8 @@ const btnMap = {
   btnTranslate: 'translate',
   btnReset: 'reset'
 };
+
+let lastQuestion = '';
 
 // Navigation state
 let currentPage = 0;
@@ -68,6 +72,7 @@ updateButtonVisibility();
 
 els.openOptions.addEventListener('click', () => chrome.runtime.openOptionsPage());
 
+
 async function handleMode(mode){
   if (mode === 'reset') { await chrome.storage.local.set({ contextQA: [] }); renderHistory([]); return notify('Context cleared'); }
   if (mode === 'ocr') {
@@ -80,22 +85,19 @@ async function handleMode(mode){
       const ocr = await chrome.runtime.sendMessage({ type:'CAPTURE_AND_OCR', rect: rectRes, tabId: tab.id, ocrLang });
       if (!ocr?.ok) throw new Error(ocr?.error||'OCR failed');
       els.preview.value = ocr.text;
+      lastQuestion = ocr.text;
       notify('OCR completed');
     } catch(e){ notify('OCR failed: ' + String(e?.message||e), true); }
     return;
   }
-  if (mode === 'translate') {
-    notify('Translation feature coming soon!');
-    return;
-  }
-  
+  if (mode === 'translate') { notify('Translation feature coming soon!'); return; }
+
   setBusy(true); notify('');
   try {
     const tab = await getActiveTab();
     await ensureContentScript(tab.id);
     let questionText = (await getSelectedOrDomText(tab.id)).trim();
     if (!questionText || questionText.length < 2){
-      // OCR path
       const rectRes = await chrome.tabs.sendMessage(tab.id, { type: 'START_OCR_SELECTION' });
       if (!rectRes?.width || !rectRes?.height) throw new Error('OCR canceled');
       const { ocrLang='eng' } = await chrome.storage.local.get('ocrLang');
@@ -104,6 +106,7 @@ async function handleMode(mode){
       questionText = ocr.text;
       if (!questionText) throw new Error('OCR returned empty text');
     }
+    lastQuestion = questionText;
     const ctx = await getContext();
     const prompt = buildPrompt(mode, questionText, ctx);
     const gen = await chrome.runtime.sendMessage({ type:'GEMINI_GENERATE', prompt });
@@ -111,7 +114,7 @@ async function handleMode(mode){
     const answer = postProcess(mode, gen.result);
     els.preview.value = answer;
     await chrome.storage.local.set({ lastAnswer: answer });
-    await saveContext({ q: questionText, a: answer });
+    await saveContext({ q: questionText, a: answer, promptName: mode });
     renderHistory(await getContext());
     notify('Ready');
   } catch(e){ notify(String(e?.message||e), true); }
@@ -140,6 +143,29 @@ function postProcess(mode, t){
   return s;
 }
 
+async function runCustomPrompt(pr){
+  if(!pr) return;
+  if(!lastQuestion){
+    const tab = await getActiveTab();
+    await ensureContentScript(tab.id);
+    lastQuestion = (await getSelectedOrDomText(tab.id)).trim();
+    if(!lastQuestion){ notify('No text for prompt', true); return; }
+  }
+  setBusy(true); notify('');
+  try {
+    const fullPrompt = pr.text + '\n\n' + lastQuestion;
+    const gen = await chrome.runtime.sendMessage({ type:'GEMINI_GENERATE', prompt: fullPrompt });
+    if (!gen?.ok) throw new Error(gen?.error||'Generate failed');
+    const answer = gen.result.trim();
+    els.preview.value = answer;
+    await chrome.storage.local.set({ lastAnswer: answer, lastCustomPromptId: pr.id });
+    await saveContext({ q: lastQuestion, a: answer, promptName: pr.name });
+    renderHistory(await getContext());
+    notify('Ready');
+  } catch(e){ notify(String(e?.message||e), true); }
+  finally { setBusy(false); }
+}
+
 async function getActiveTab(){ const tabs = await chrome.tabs.query({active:true,currentWindow:true}); return tabs[0]; }
 async function ensureContentScript(tabId){ try{ await chrome.tabs.sendMessage(tabId,{type:'PING'});}catch{ await chrome.scripting.executeScript({target:{tabId}, files:['content.js']}); await chrome.tabs.sendMessage(tabId,{type:'PING'});} }
 async function getSelectedOrDomText(tabId){ const r = await chrome.tabs.sendMessage(tabId,{type:'GET_SELECTED_OR_DOM_TEXT'}); return r?.ok? r.text: ''; }
@@ -159,11 +185,89 @@ els.btnWrite.addEventListener('click', async () => {
   } catch(e){ notify('Type failed: '+(e?.message||e), true); }
 });
 
+async function choosePromptModal(){
+  const { customPrompts=[] } = await chrome.storage.sync.get('customPrompts');
+  if(!customPrompts.length){ notify('No custom prompts', true); return null; }
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.id = 'prompt-modal';
+    overlay.innerHTML = `
+      <div class="pm-content">
+        <div class="pm-header"><h3>Select Prompt</h3><button class="pm-close">&times;</button></div>
+        <input id="pmFilter" class="pm-filter" placeholder="Filter by tag" />
+        <div class="pm-list"></div>
+        <div class="pm-actions">
+          <button class="pm-run">Generate</button>
+          <button class="pm-cancel">Cancel</button>
+        </div>
+      </div>`;
+    const style = document.createElement('style');
+    style.textContent = `
+      #prompt-modal{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:9999;}
+      #prompt-modal .pm-content{background:linear-gradient(135deg,#23272b 0%,#120f12 100%);border-radius:15px;border:3px solid #64077d;box-shadow:0 10px 30px rgba(0,0,0,0.3);width:90%;max-width:400px;max-height:80vh;overflow:hidden;display:flex;flex-direction:column;}
+      #prompt-modal .pm-header{display:flex;justify-content:space-between;align-items:center;padding:15px 20px;border-bottom:1px solid #292d33;}
+      #prompt-modal .pm-header h3{margin:0;color:#ff9800;font-size:18px;font-weight:bold;}
+      #prompt-modal .pm-close{background:none;border:none;color:#e2e8f0;font-size:24px;cursor:pointer;}
+      #prompt-modal .pm-filter{margin:15px 20px;padding:8px 12px;border-radius:6px;border:1px solid #334155;background:#0b1220;color:#e2e8f0;}
+      #prompt-modal .pm-list{flex:1;overflow-y:auto;padding:0 20px 10px;}
+      #prompt-modal .pm-item{padding:8px 12px;border:1px solid #334155;border-radius:6px;margin-bottom:8px;cursor:pointer;}
+      #prompt-modal .pm-item.selected{border-color:#ffd600;background:rgba(255,214,0,0.1);}
+      #prompt-modal .pm-actions{display:flex;justify-content:flex-end;gap:10px;padding:10px 20px;border-top:1px solid #292d33;}
+      #prompt-modal .pm-actions button{background:#1f2937;border:1px solid #334155;color:#e2e8f0;border-radius:6px;padding:8px 16px;cursor:pointer;transition:filter .2s;}
+      #prompt-modal .pm-actions button:hover{filter:brightness(1.1);} 
+      #prompt-modal .pm-run{background:#22c55e;border-color:#22c55e;color:#0b1215;font-weight:600;}
+    `;
+    document.body.appendChild(overlay); document.head.appendChild(style);
+    const listEl = overlay.querySelector('.pm-list');
+    let filtered = [...customPrompts];
+    let selectedId = null;
+    const render = () => {
+      listEl.innerHTML = filtered.map(p=>`<div class="pm-item" data-id="${p.id}">${p.name}</div>`).join('');
+      listEl.querySelectorAll('.pm-item').forEach(it=>{
+        it.addEventListener('click',()=>{
+          selectedId = it.dataset.id;
+          listEl.querySelectorAll('.pm-item').forEach(x=>x.classList.remove('selected'));
+          it.classList.add('selected');
+        });
+      });
+    };
+    render();
+    overlay.querySelector('#pmFilter').addEventListener('input', e=>{
+      const tag = e.target.value.trim();
+      filtered = customPrompts.filter(p=>!tag || (p.tags||[]).includes(tag));
+      selectedId = null; render();
+    });
+    function close(){ overlay.remove(); style.remove(); }
+    overlay.querySelector('.pm-close').addEventListener('click',()=>{ close(); resolve(null); });
+    overlay.querySelector('.pm-cancel').addEventListener('click',()=>{ close(); resolve(null); });
+    overlay.addEventListener('click',e=>{ if(e.target===overlay){ close(); resolve(null);} });
+    overlay.querySelector('.pm-run').addEventListener('click',()=>{
+      const pr = customPrompts.find(p=>p.id===selectedId);
+      if(!pr){ notify('Select a prompt', true); return; }
+      close(); resolve(pr);
+    });
+  });
+}
+
+els.btnCustomPrompt?.addEventListener('click', async () => {
+  const pr = await choosePromptModal();
+  if(pr) runCustomPrompt(pr);
+});
+
+els.btnUseLastPrompt?.addEventListener('click', async () => {
+  const { lastCustomPromptId } = await chrome.storage.local.get('lastCustomPromptId');
+  if(!lastCustomPromptId){ notify('No last prompt', true); return; }
+  const { customPrompts=[] } = await chrome.storage.sync.get('customPrompts');
+  const pr = customPrompts.find(p=>p.id===lastCustomPromptId);
+  if(!pr){ notify('Prompt missing', true); return; }
+  runCustomPrompt(pr);
+});
+
 async function loadIP(){
   try {
     const r = await chrome.runtime.sendMessage({ type:'GET_PUBLIC_IP' });
     if(!r?.ok) throw new Error(r?.error||'IP error');
-    const { ip, country, city, postal, isp, timezone } = r.info || {};
+    const { ip, country, city, postal, isp, timezone, fraud_score, proxy, vpn, tor } = r.info || {};
     els.ipInfoText.innerHTML = `
       <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
         <strong>IP:</strong> ${ip || 'Unknown'}
@@ -171,6 +275,7 @@ async function loadIP(){
       </div>
       <div><strong>Location:</strong> ${city || 'Unknown'}, ${country || 'Unknown'}</div>
       <div><strong>Postal:</strong> ${postal || 'Unknown'} | <strong>ISP:</strong> ${isp || 'Unknown'}</div>
+      <div><strong>Fraud:</strong> ${fraud_score ?? 'Unknown'} | <strong>Proxy:</strong> ${proxy ?? 'Unknown'} | <strong>VPN:</strong> ${vpn ?? 'Unknown'} | <strong>Tor:</strong> ${tor ?? 'Unknown'}</div>
       <div><strong>Timezone:</strong> ${timezone || 'Unknown'}</div>
     `;
   }
@@ -179,7 +284,10 @@ async function loadIP(){
   }
 }
 
-function renderHistory(list){ const items = (list||[]).slice(-5).map(x=>`- ${x.q} → ${x.a}`).join('\n'); els.history.textContent = items || 'No history'; }
+function renderHistory(list){
+  const items = (list||[]).slice(-5).map(x=>`- [${x.promptName||'n/a'}] ${x.q} → ${x.a}`).join('\n');
+  els.history.textContent = items || 'No history';
+}
 
 (async function init(){ renderHistory(await getContext()); loadIP(); })();
 
