@@ -493,8 +493,9 @@
   }
 
   async function showTempMailModal() {
-    const API_URL = 'https://www.1secmail.com/api/v1';
-    let currentMailbox = null;
+    const BASE = 'https://api.mail.tm';
+    let account = null;
+    let token = null;
     let refreshTimer = null;
     const seen = new Set();
     const modal = createStyledModal('Temporary Email', `
@@ -515,74 +516,97 @@
     const statusEl = modal.querySelector('#tmStatus');
     const listEl = modal.querySelector('#tmMessages');
 
+    function httpError(res){
+      if(!res.ok){
+        const map={400:'Bad Request',401:'Unauthorized',429:'Too Many Requests'};
+        const txt=map[res.status]||res.statusText||'';
+        throw new Error(`Error ${res.status}${txt?': '+txt:''}`);
+      }
+      return res;
+    }
     function setStatus(msg, err=false){
       if (statusEl) { statusEl.textContent = msg; statusEl.style.color = err ? '#f87171' : '#e2e8f0'; }
     }
     function clearMailbox(){
-      currentMailbox = null;
-      emailEl.value = '';
-      listEl.innerHTML = '';
-      if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+      if(refreshTimer){ clearInterval(refreshTimer); refreshTimer=null; }
+      if(account && token){
+        fetch(`${BASE}/accounts/${account.id}`,{method:'DELETE',headers:{Authorization:`Bearer ${token}`}}).catch(()=>{});
+      }
+      account=null;
+      token=null;
+      emailEl.value='';
+      listEl.innerHTML='';
+      setStatus('Mailbox cleared');
     }
     async function generateTempEmail(){
       setStatus('Generating...');
       try{
-        const res = await fetch(`${API_URL}/?action=genRandomMailbox&count=1`);
-        if(!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        const email = Array.isArray(data) ? data[0] : null;
-        if(email){
-          const [login, domain] = email.split('@');
-          currentMailbox = {login, domain};
-          emailEl.value = email;
-          setStatus('Email generated');
-          seen.clear();
-          await checkInbox();
-          if(refreshTimer) clearInterval(refreshTimer);
-          refreshTimer = setInterval(checkInbox, 60000);
-        }else throw new Error('Invalid response');
+        const domRes = await httpError(await fetch(`${BASE}/domains`));
+        const domData = await domRes.json();
+        const domains = domData['hydra:member']||[];
+        if(!domains.length) throw new Error('No domains available');
+        const domain = domains[Math.floor(Math.random()*domains.length)].domain;
+        const username = Math.random().toString(36).slice(2,10);
+        const password = Math.random().toString(36).slice(2,10);
+        const address = `${username}@${domain}`;
+        const accRes = await httpError(await fetch(`${BASE}/accounts`,{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({address,password})
+        }));
+        const accData = await accRes.json();
+        const tokRes = await httpError(await fetch(`${BASE}/token`,{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({address,password})
+        }));
+        const tokData = await tokRes.json();
+        account = {id:accData.id,address};
+        token = tokData.token;
+        emailEl.value = address;
+        setStatus('Mailbox ready');
+        seen.clear();
+        await checkInbox();
+        if(refreshTimer) clearInterval(refreshTimer);
+        refreshTimer = setInterval(checkInbox,60000);
       }catch(e){
-        setStatus('Error: '+e.message, true);
+        setStatus(e.message, true);
       }
     }
     async function checkInbox(){
-      if(!currentMailbox){ setStatus('No email generated'); return; }
+      if(!account || !token){ setStatus('No mailbox'); return; }
       try{
-        const {login, domain} = currentMailbox;
-        const res = await fetch(`${API_URL}/?action=getMessages&login=${login}&domain=${domain}`);
-        if(!res.ok) throw new Error(`HTTP ${res.status}`);
-        const msgs = await res.json();
+        const res = await httpError(await fetch(`${BASE}/messages`,{headers:{Authorization:`Bearer ${token}`}}));
+        const data = await res.json();
+        const msgs = data['hydra:member']||[];
         renderMessages(msgs);
         for(const m of msgs){
           if(!seen.has(m.id)){
             seen.add(m.id);
-            chrome.runtime.sendMessage({ type: 'SHOW_NOTIFICATION', title: m.from || 'Temp Mail', message: m.subject || '' });
+            chrome.runtime.sendMessage({ type:'SHOW_NOTIFICATION', title: m.from?.address || 'Temp Mail', message: m.subject || '' });
           }
         }
-        setStatus(`Found ${msgs.length} message(s).`);
+        setStatus(`Found ${msgs.length} message(s)`);
       }catch(e){
-        setStatus('Error: '+e.message, true);
+        setStatus(e.message,true);
       }
     }
     function renderMessages(msgs){
-      if(!msgs.length){ listEl.textContent = 'No messages'; return; }
+      if(!msgs.length){ listEl.textContent='No messages'; return; }
       listEl.innerHTML = msgs.map(m=>`<div class="tm-msg" data-id="${m.id}" style="padding:6px; border-bottom:1px solid #334155; cursor:pointer;">
-        <div><strong>${m.from || 'Unknown'}</strong></div>
+        <div><strong>${m.from?.address || 'Unknown'}</strong></div>
         <div>${m.subject || ''}</div>
-        <div style=\"font-size:12px; color:#94a3b8;\">${m.date || ''}</div>
+        <div style=\"font-size:12px; color:#94a3b8;\">${m.createdAt || ''}</div>
       </div>`).join('');
       listEl.querySelectorAll('.tm-msg').forEach(div=>div.addEventListener('click',async()=>{
         const id = div.getAttribute('data-id');
         try{
-          const {login, domain} = currentMailbox;
-          const res = await fetch(`${API_URL}/?action=readMessage&login=${login}&domain=${domain}&id=${id}`);
-          if(!res.ok) throw new Error(`HTTP ${res.status}`);
+          const res = await httpError(await fetch(`${BASE}/messages/${id}`,{headers:{Authorization:`Bearer ${token}`}}));
           const msg = await res.json();
-          const body = msg.textBody || msg.body || msg.htmlBody || '';
-          createStyledModal('Mail from '+(msg.from||''), `<div style="max-height:300px;overflow:auto;white-space:pre-wrap;color:#e2e8f0;">${body}</div>
-            <div style="text-align:center;margin-top:10px;"><a href="data:text/plain;charset=utf-8,${encodeURIComponent(body)}" download="mail.txt" style="color:#22c55e;">Download</a></div>`);
+          const body = (Array.isArray(msg.html) && msg.html.length) ? msg.html.join('') : `<pre>${msg.text || ''}</pre>`;
+          createStyledModal('Mail from '+(msg.from?.address||''), `<div style="max-height:300px;overflow:auto;color:#e2e8f0;">${body}</div>`);
         }catch(err){
-          setStatus('Error: '+err.message, true);
+          setStatus(err.message,true);
         }
       }));
     }
@@ -590,7 +614,7 @@
     modal.querySelector('#tmCreate').addEventListener('click', generateTempEmail);
     modal.querySelector('#tmRefresh').addEventListener('click', checkInbox);
     modal.querySelector('#tmCopy').addEventListener('click', ()=>{ if(emailEl.value){ navigator.clipboard.writeText(emailEl.value); showNotification('Email copied'); }});
-    modal.querySelector('#tmDelete').addEventListener('click', ()=>{ clearMailbox(); setStatus('Mailbox cleared'); });
+    modal.querySelector('#tmDelete').addEventListener('click', clearMailbox);
   }
 
   function showLastAnswerModal(answer) {
