@@ -493,10 +493,8 @@
   }
 
   async function showTempMailModal() {
-    const { tempMailApiKey = '' } = await chrome.storage.local.get('tempMailApiKey');
-    if (!tempMailApiKey) { showNotification('Set Temp Mail API key in options'); return; }
-    const BASE_URL = 'https://hub.juheapi.com/temp_mail/v1';
-    let currentMailboxId = null;
+    const API_URL = 'https://www.1secmail.com/api/v1';
+    let currentMailbox = null;
     let refreshTimer = null;
     const seen = new Set();
     const modal = createStyledModal('Temporary Email', `
@@ -521,7 +519,7 @@
       if (statusEl) { statusEl.textContent = msg; statusEl.style.color = err ? '#f87171' : '#e2e8f0'; }
     }
     function clearMailbox(){
-      currentMailboxId = null;
+      currentMailbox = null;
       emailEl.value = '';
       listEl.innerHTML = '';
       if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
@@ -529,29 +527,31 @@
     async function generateTempEmail(){
       setStatus('Generating...');
       try{
-        const res = await fetch(`${BASE_URL}/create?key=${tempMailApiKey}`);
+        const res = await fetch(`${API_URL}/?action=genRandomMailbox&count=1`);
         if(!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        if(data.code === '0' && data.data){
-          currentMailboxId = data.data.id;
-          emailEl.value = data.data.email;
-          setStatus('Email created');
+        const email = Array.isArray(data) ? data[0] : null;
+        if(email){
+          const [login, domain] = email.split('@');
+          currentMailbox = {login, domain};
+          emailEl.value = email;
+          setStatus('Email generated');
           seen.clear();
           await checkInbox();
           if(refreshTimer) clearInterval(refreshTimer);
           refreshTimer = setInterval(checkInbox, 60000);
-        }else throw new Error(data.msg || 'API error');
+        }else throw new Error('Invalid response');
       }catch(e){
         setStatus('Error: '+e.message, true);
       }
     }
     async function checkInbox(){
-      if(!currentMailboxId){ setStatus('No email generated'); return; }
+      if(!currentMailbox){ setStatus('No email generated'); return; }
       try{
-        const res = await fetch(`${BASE_URL}/messages?key=${tempMailApiKey}&id=${currentMailboxId}`);
+        const {login, domain} = currentMailbox;
+        const res = await fetch(`${API_URL}/?action=getMessages&login=${login}&domain=${domain}`);
         if(!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        const msgs = data.data || [];
+        const msgs = await res.json();
         renderMessages(msgs);
         for(const m of msgs){
           if(!seen.has(m.id)){
@@ -569,15 +569,20 @@
       listEl.innerHTML = msgs.map(m=>`<div class="tm-msg" data-id="${m.id}" style="padding:6px; border-bottom:1px solid #334155; cursor:pointer;">
         <div><strong>${m.from || 'Unknown'}</strong></div>
         <div>${m.subject || ''}</div>
-        <div style="font-size:12px; color:#94a3b8;">${(m.text || m.body || '').slice(0,40)}</div>
+        <div style=\"font-size:12px; color:#94a3b8;\">${m.date || ''}</div>
       </div>`).join('');
-      listEl.querySelectorAll('.tm-msg').forEach(div=>div.addEventListener('click',()=>{
+      listEl.querySelectorAll('.tm-msg').forEach(div=>div.addEventListener('click',async()=>{
         const id = div.getAttribute('data-id');
-        const msg = msgs.find(x=>String(x.id)===id);
-        if(msg){
-          const body = msg.text || msg.body || '';
+        try{
+          const {login, domain} = currentMailbox;
+          const res = await fetch(`${API_URL}/?action=readMessage&login=${login}&domain=${domain}&id=${id}`);
+          if(!res.ok) throw new Error(`HTTP ${res.status}`);
+          const msg = await res.json();
+          const body = msg.textBody || msg.body || msg.htmlBody || '';
           createStyledModal('Mail from '+(msg.from||''), `<div style="max-height:300px;overflow:auto;white-space:pre-wrap;color:#e2e8f0;">${body}</div>
             <div style="text-align:center;margin-top:10px;"><a href="data:text/plain;charset=utf-8,${encodeURIComponent(body)}" download="mail.txt" style="color:#22c55e;">Download</a></div>`);
+        }catch(err){
+          setStatus('Error: '+err.message, true);
         }
       }));
     }
