@@ -44,8 +44,8 @@
     "https://generativelanguage.googleapis.com/*",
     "https://api.cerebras.ai/*",
     "https://api.ipdata.co/*",
-    "https://www.1secmail.com/*",
-    "https://randomuser.me/*"
+    "https://randomuser.me/*",
+    "https://yopmail.com/*"
   ],
   "background": {
     "service_worker": "background.js"

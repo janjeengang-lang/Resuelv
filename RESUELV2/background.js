@@ -9,6 +9,7 @@ const DEFAULTS = {
   ocrLang: 'eng',
 };
 
+
 chrome.runtime.onInstalled.addListener(async () => {
   try {
     const cur = await chrome.storage.local.get(Object.keys(DEFAULTS));
