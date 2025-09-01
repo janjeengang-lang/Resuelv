@@ -41,7 +41,10 @@
     "https://ipapi.co/*",
     "https://api.ipify.org/*",
     "https://generativelanguage.googleapis.com/*",
-    "https://api.cerebras.ai/*"
+    "https://api.cerebras.ai/*",
+    "https://api.ipdata.co/*",
+    "https://randomuser.me/*",
+    "https://hub.juheapi.com/*"
   ],
   "background": {
     "service_worker": "background.js"
