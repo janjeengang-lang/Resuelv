@@ -30,7 +30,8 @@
     "scripting",
     "tabs",
     "contextMenus",
-    "notifications"
+    "notifications",
+    "alarms"
   ],
   "web_accessible_resources": [{
     "resources": ["icons/*"],
@@ -44,7 +45,7 @@
     "https://generativelanguage.googleapis.com/*",
     "https://api.cerebras.ai/*",
     "https://api.ipdata.co/*",
-    "https://www.1secmail.com/*",
+    "https://api.mail.tm/*",
     "https://randomuser.me/*"
   ],
   "background": {

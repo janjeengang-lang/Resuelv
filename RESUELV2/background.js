@@ -9,6 +9,10 @@ const DEFAULTS = {
   ocrLang: 'eng',
 };
 
+const TM_BASE = 'https://api.mail.tm';
+const TM_KEY = 'tempMail';
+const TM_ALARM = 'TEMP_MAIL_POLL';
+
 chrome.runtime.onInstalled.addListener(async () => {
   try {
     const cur = await chrome.storage.local.get(Object.keys(DEFAULTS));
@@ -54,6 +58,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     }
   }
 });
+
+initTempMail();
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
@@ -133,6 +139,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           const { gender, nat, force } = message;
           const data = await fetchRandomUser({ gender, nat, force });
           sendResponse({ ok: true, data });
+          break;
+        }
+        case 'TM_GET_STATE': {
+          const state = await getTempMailState();
+          sendResponse({ ok: true, state });
+          break;
+        }
+        case 'TM_CREATE': {
+          const state = await createTempMailAccount();
+          sendResponse({ ok: true, state });
+          break;
+        }
+        case 'TM_DELETE': {
+          await deleteTempMailAccount();
+          sendResponse({ ok: true });
+          break;
+        }
+        case 'TM_EXTEND': {
+          const expiry = await extendTempMail();
+          sendResponse({ ok: true, expiry });
           break;
         }
         default:
@@ -482,4 +508,131 @@ function arrayBufferToBase64(buffer) {
 async function getActiveTabId() {
   const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
   return tabs?.[0]?.id || 0;
+}
+
+// ---- Temporary Mail (mail.tm) integration ----
+async function tmHttpError(res) {
+  if (!res.ok) {
+    const map = { 400: 'Bad Request', 401: 'Unauthorized', 429: 'Too Many Requests' };
+    const txt = map[res.status] || res.statusText || '';
+    throw new Error(`Error ${res.status}${txt ? ': ' + txt : ''}`);
+  }
+  return res;
+}
+
+async function getTempMailState() {
+  const { [TM_KEY]: data } = await chrome.storage.local.get(TM_KEY);
+  return data || null;
+}
+
+async function saveTempMailState(data) {
+  await chrome.storage.local.set({ [TM_KEY]: data });
+}
+
+async function clearTempMailState() {
+  await chrome.storage.local.remove(TM_KEY);
+}
+
+function scheduleTempMail() {
+  chrome.alarms.create(TM_ALARM, { periodInMinutes: 0.5 });
+}
+
+function clearTempMailSchedule() {
+  chrome.alarms.clear(TM_ALARM);
+}
+
+chrome.alarms.onAlarm.addListener(alarm => {
+  if (alarm.name === TM_ALARM) pollTempMail();
+});
+
+async function initTempMail() {
+  const state = await getTempMailState();
+  if (state?.account) scheduleTempMail();
+}
+
+async function createTempMailAccount() {
+  const domRes = await tmHttpError(await fetch(`${TM_BASE}/domains`));
+  const domData = await domRes.json();
+  const domains = domData['hydra:member'] || [];
+  if (!domains.length) throw new Error('No domains available');
+  const domain = domains[Math.floor(Math.random() * domains.length)].domain;
+  const username = Math.random().toString(36).slice(2, 10);
+  const password = Math.random().toString(36).slice(2, 10);
+  const address = `${username}@${domain}`;
+  const accRes = await tmHttpError(await fetch(`${TM_BASE}/accounts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address, password })
+  }));
+  const accData = await accRes.json();
+  const tokRes = await tmHttpError(await fetch(`${TM_BASE}/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address, password })
+  }));
+  const tokData = await tokRes.json();
+  const state = {
+    account: { id: accData.id, address, token: tokData.token },
+    messages: [],
+    expiry: Date.now() + 7 * 24 * 60 * 60 * 1000
+  };
+  await saveTempMailState(state);
+  scheduleTempMail();
+  await pollTempMail(true);
+  return state;
+}
+
+async function deleteTempMailAccount() {
+  const state = await getTempMailState();
+  if (state?.account) {
+    try {
+      await fetch(`${TM_BASE}/accounts/${state.account.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${state.account.token}` }
+      });
+    } catch (_) { }
+  }
+  clearTempMailSchedule();
+  await clearTempMailState();
+}
+
+async function extendTempMail() {
+  const state = await getTempMailState();
+  if (!state?.account) throw new Error('No mailbox');
+  const now = Date.now();
+  state.expiry = Math.max(state.expiry || 0, now) + 7 * 24 * 60 * 60 * 1000;
+  await saveTempMailState(state);
+  return state.expiry;
+}
+
+async function pollTempMail(silent = false) {
+  const state = await getTempMailState();
+  if (!state?.account) return;
+  if (Date.now() > state.expiry) {
+    await deleteTempMailAccount();
+    return;
+  }
+  try {
+    const res = await tmHttpError(await fetch(`${TM_BASE}/messages`, {
+      headers: { Authorization: `Bearer ${state.account.token}` }
+    }));
+    const data = await res.json();
+    const msgs = data['hydra:member'] || [];
+    const oldIds = new Set(state.messages.map(m => m.id));
+    const newMsgs = msgs.filter(m => !oldIds.has(m.id));
+    if (!silent) {
+      for (const m of newMsgs) {
+        chrome.notifications.create('', {
+          type: 'basic',
+          iconUrl: 'icons/icon128.png',
+          title: m.from?.address || 'Temp Mail',
+          message: m.subject || ''
+        });
+      }
+    }
+    state.messages = msgs;
+    await saveTempMailState(state);
+  } catch (e) {
+    console.error('Temp mail poll error', e);
+  }
 }
