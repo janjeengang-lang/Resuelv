@@ -95,7 +95,6 @@ async function handleMode(mode){
     } catch(e){ notify('OCR failed: ' + String(e?.message||e), true); }
     return;
   }
-
   if (mode === 'translate') { notify('Translation feature coming soon!'); return; }
 
   setBusy(true); notify('');

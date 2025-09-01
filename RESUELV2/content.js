@@ -208,6 +208,10 @@
             <span class="menu-icon">🌐</span>
             <span class="menu-text">IP Information</span>
           </div>
+          <div class="menu-item" data-action="fake-info">
+            <span class="menu-icon">👤</span>
+            <span class="menu-text">Generate Fake Info</span>
+          </div>
         </div>
       </div>
     `;
@@ -371,6 +375,9 @@
           showNotification('Failed to get IP information: ' + e.message);
         }
         break;
+      case 'fake-info':
+        showFakeInfoModal();
+        break;
     }
   }
 
@@ -394,6 +401,85 @@
         </div>
       </div>
     `);
+  }
+
+  async function showFakeInfoModal() {
+    const content = `
+      <div style="margin-bottom:15px; display:flex; gap:10px; flex-wrap:wrap;">
+        <select id="fiGender" style="flex:1; padding:6px; border-radius:6px; background:#0b1220; color:#e2e8f0; border:1px solid #334155;">
+          <option value="">Any Gender</option>
+          <option value="male">Male</option>
+          <option value="female">Female</option>
+        </select>
+        <input id="fiNat" placeholder="Nationality (e.g., US)" style="flex:1; padding:6px; border-radius:6px; background:#0b1220; color:#e2e8f0; border:1px solid #334155;" />
+        <button id="fiGenerate" style="background:linear-gradient(45deg,#4ecdc4,#44a08d); border:none; color:#fff; padding:6px 12px; border-radius:6px; cursor:pointer;">Generate</button>
+      </div>
+      <div id="fiResult" style="display:none;"></div>
+    `;
+    const modal = createStyledModal('Fake User Info', content);
+
+    async function generate(force=false){
+      try {
+        const gender = modal.querySelector('#fiGender').value;
+        const nat = modal.querySelector('#fiNat').value.trim();
+        const resp = await chrome.runtime.sendMessage({ type:'GENERATE_FAKE_INFO', gender, nat, force });
+        if (!resp?.ok) throw new Error(resp?.error || 'Failed');
+        render(resp.data);
+      } catch(e){
+        showNotification('Failed to generate: '+e.message);
+      }
+    }
+
+    function render(user){
+      const fi = modal.querySelector('#fiResult');
+      const name = `${user.name?.first || ''} ${user.name?.last || ''}`.trim();
+      const address = `${user.location?.street?.number || ''} ${user.location?.street?.name || ''}, ${user.location?.city || ''}, ${user.location?.country || ''}`.trim();
+      const dob = user.dob?.date ? user.dob.date.split('T')[0] : '';
+      const fields = [
+        { label:'Name', value:name },
+        { label:'Email', value:user.email },
+        { label:'Phone', value:user.phone },
+        { label:'Address', value:address },
+        { label:'DOB', value:dob }
+      ];
+      fi.innerHTML = `
+        <div style="text-align:center; margin-bottom:15px;">
+          ${user.picture?.large ? `<img src="${user.picture.large}" style="width:80px;height:80px;border-radius:50%;object-fit:cover;"/>` : ''}
+        </div>
+        ${fields.map((f,i)=>`
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+            <strong style="color:#ffd600; min-width:70px;">${f.label}:</strong>
+            <span style="flex:1; color:#e2e8f0;">${f.value || 'Unknown'}</span>
+            <button data-copy="${i}" style="background:#22c55e;border:none;color:#fff;padding:4px 8px;border-radius:5px;cursor:pointer;font-size:12px;">Copy</button>
+            <button data-write="${i}" style="background:#ff6b6b;border:none;color:#fff;padding:4px 8px;border-radius:5px;cursor:pointer;font-size:12px;">Write Here</button>
+          </div>
+        `).join('')}
+        <div style="text-align:center; margin-top:10px;">
+          <button id="fiRegenerate" style="background:linear-gradient(45deg,#feca57,#ff9ff3); border:none; color:#fff; padding:8px 16px; border-radius:20px; cursor:pointer; font-weight:bold;">Regenerate Info</button>
+        </div>
+      `;
+      fi.style.display = 'block';
+
+      fi.querySelectorAll('[data-copy]').forEach(btn=>{
+        btn.addEventListener('click',()=>{
+          const idx = btn.getAttribute('data-copy');
+          navigator.clipboard.writeText(fields[idx].value || '');
+          showNotification('Copied to clipboard');
+        });
+      });
+      fi.querySelectorAll('[data-write]').forEach(btn=>{
+        btn.addEventListener('click',()=>{
+          const idx = btn.getAttribute('data-write');
+          const text = fields[idx].value || '';
+          const m = document.getElementById('resuelv-styled-modal');
+          if (m) m.remove();
+          typeAnswer(text);
+        });
+      });
+      fi.querySelector('#fiRegenerate')?.addEventListener('click',()=>generate(true));
+    }
+
+    modal.querySelector('#fiGenerate').addEventListener('click', () => generate(false));
   }
 
   function showLastAnswerModal(answer) {
@@ -526,6 +612,7 @@
 
   async function startFullPageOCR() {
     try {
+      showNotification('Starting full page OCR...');
       const { ocrLang = 'eng' } = await chrome.storage.local.get('ocrLang');
       const response = await chrome.runtime.sendMessage({
         type: 'CAPTURE_FULL_PAGE_OCR',

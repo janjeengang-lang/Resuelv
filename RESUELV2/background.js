@@ -114,6 +114,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ ok: true, result, promptName: pr.name });
           break;
         }
+        case 'GENERATE_FAKE_INFO': {
+          const { gender, nat, force } = message;
+          const data = await fetchRandomUser({ gender, nat, force });
+          sendResponse({ ok: true, data });
+          break;
+        }
         default:
           sendResponse({ ok: false, error: 'Unknown message type' });
       }
@@ -404,6 +410,31 @@ async function testIPQS(key){
   } catch (e) {
     return { ok: false, error: e.message };
   }
+}
+
+async function fetchRandomUser({ gender = '', nat = '', force = false } = {}) {
+  const cacheKey = `fi_${gender || 'any'}_${nat || 'any'}`;
+  const { fakeCache = {} } = await chrome.storage.local.get('fakeCache');
+  if (!force) {
+    const entry = fakeCache[cacheKey];
+    if (entry && Date.now() - entry.ts < 5 * 60 * 1000) {
+      return entry.data;
+    }
+  }
+
+  const url = new URL('https://randomuser.me/api/');
+  if (gender) url.searchParams.set('gender', gender);
+  if (nat) url.searchParams.set('nat', nat);
+  url.searchParams.set('noinfo', '');
+
+  const res = await fetch(url.toString());
+  if (!res.ok) throw new Error(`RandomUser API failed: ${res.status}`);
+  const data = await res.json();
+  const user = data?.results?.[0];
+  if (!user) throw new Error('RandomUser returned no data');
+  fakeCache[cacheKey] = { ts: Date.now(), data: user };
+  await chrome.storage.local.set({ fakeCache });
+  return user;
 }
 
 function sanitize(s) {
