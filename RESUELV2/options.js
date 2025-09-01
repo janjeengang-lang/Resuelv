@@ -6,11 +6,12 @@ const els = {
   geminiKey: document.getElementById('geminiKey'),
   cerebrasKey: document.getElementById('cerebrasKey'),
   ocrKey: document.getElementById('ocrKey'),
-  ipqsKey: document.getElementById('ipqsKey'),
+  ipdataKey: document.getElementById('ipdataKey'),
+  tempMailKey: document.getElementById('tempMailKey'),
   typingSpeed: document.getElementById('typingSpeed'),
   ocrLang: document.getElementById('ocrLang'),
   test: document.getElementById('test'),
-  testIpqs: document.getElementById('testIpqs'),
+  testIpdata: document.getElementById('testIpdata'),
   save: document.getElementById('save'),
   clear: document.getElementById('clear'),
   status: document.getElementById('status'),
@@ -40,7 +41,8 @@ async function load() {
       'geminiApiKey',
       'cerebrasApiKey',
       'ocrApiKey',
-      'ipqsApiKey',
+      'ipdataApiKey',
+      'tempMailApiKey',
       'typingSpeed',
       'ocrLang',
     ]);
@@ -51,7 +53,8 @@ async function load() {
     els.geminiKey.value      = s.geminiApiKey || '';
     els.cerebrasKey.value    = s.cerebrasApiKey || '';
     els.ocrKey.value         = s.ocrApiKey || '';
-    els.ipqsKey.value        = s.ipqsApiKey || '';
+    els.ipdataKey.value      = s.ipdataApiKey || '';
+    els.tempMailKey.value    = s.tempMailApiKey || '';
     els.typingSpeed.value    = s.typingSpeed || 'normal';
     els.ocrLang.value        = s.ocrLang || 'eng';
 
@@ -165,7 +168,8 @@ els.save?.addEventListener('click', async () => {
       geminiApiKey:      els.geminiKey.value.trim(),
       cerebrasApiKey:    els.cerebrasKey.value.trim(),
       ocrApiKey:         els.ocrKey.value.trim(),
-      ipqsApiKey:        els.ipqsKey.value.trim(),
+      ipdataApiKey:      els.ipdataKey.value.trim(),
+      tempMailApiKey:    els.tempMailKey.value.trim(),
       typingSpeed:       els.typingSpeed.value,
       ocrLang:           els.ocrLang.value,
     });
@@ -199,14 +203,14 @@ els.test?.addEventListener('click', async () => {
   }
 });
 
-els.testIpqs?.addEventListener('click', async () => {
+els.testIpdata?.addEventListener('click', async () => {
   try {
-    notify('Testing IPQS…');
-    const key = els.ipqsKey.value.trim();
+    notify('Testing ipdata…');
+    const key = els.ipdataKey.value.trim();
     if (!key) { notify('Enter API key', true); return; }
-    const res = await chrome.runtime.sendMessage({ type: 'TEST_IPQS', key });
-    if (!res?.ok) throw new Error(res?.error || 'IPQS failed');
-    notify('IPQS OK');
+    const res = await chrome.runtime.sendMessage({ type: 'TEST_IPDATA', key });
+    if (!res?.ok) throw new Error(res?.error || 'ipdata failed');
+    notify('ipdata OK');
   } catch (e) { notify(String(e?.message || e), true); }
 });
 

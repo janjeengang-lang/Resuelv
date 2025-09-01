@@ -212,6 +212,10 @@
             <span class="menu-icon">👤</span>
             <span class="menu-text">Generate Fake Info</span>
           </div>
+          <div class="menu-item" data-action="temp-mail">
+            <span class="menu-icon">📧</span>
+            <span class="menu-text">Temp Mail</span>
+          </div>
         </div>
       </div>
     `;
@@ -378,6 +382,9 @@
       case 'fake-info':
         showFakeInfoModal();
         break;
+      case 'temp-mail':
+        showTempMailModal();
+        break;
     }
   }
 
@@ -404,6 +411,8 @@
   }
 
   async function showFakeInfoModal() {
+    const COUNTRY_CODES = "AF AX AL DZ AS AD AO AI AQ AR AM AW AU AT AZ BS BH BD BB BY BE BZ BJ BM BT BO BQ BA BW BV BR IO BN BG BF BI KH CM CA CV KY CF TD CL CN CX CC CO KM CG CD CK CR CI HR CU CW CY CZ DK DJ DM DO EC EG SV GQ ER EE ET FK FO FJ FI FR GF PF TF GA GM GE DE GH GI GR GL GD GP GU GT GG GN GW GY HT HM VA HN HK HU IS IN ID IR IQ IE IM IL IT JM JP JE JO KZ KE KI KP KR KW KG LA LV LB LS LR LY LI LT LU MO MK MG MW MY MV ML MT MH MQ MR MU YT MX FM MD MC MN ME MS MA MZ MM NA NR NP NL NC NZ NI NE NG NU NF MP NO OM PK PW PS PA PG PY PE PH PN PL PT PR QA RE RO RU RW BL SH KN LC MF PM VC WS SM ST SA SN RS SC SL SG SX SK SI SB SO ZA GS SS ES LK SD SR SJ SE CH SY TW TJ TZ TH TL TG TK TO TT TN TR TM TC TV UG UA AE GB US UM UY UZ VU VE VN VG VI WF EH YE ZM ZW".split(' ');
+    const datalist = `<datalist id="fiNatList">${COUNTRY_CODES.map(c=>`<option value="${c}">`).join('')}</datalist>`;
     const content = `
       <div style="margin-bottom:15px; display:flex; gap:10px; flex-wrap:wrap;">
         <select id="fiGender" style="flex:1; padding:6px; border-radius:6px; background:#0b1220; color:#e2e8f0; border:1px solid #334155;">
@@ -411,9 +420,10 @@
           <option value="male">Male</option>
           <option value="female">Female</option>
         </select>
-        <input id="fiNat" placeholder="Nationality (e.g., US)" style="flex:1; padding:6px; border-radius:6px; background:#0b1220; color:#e2e8f0; border:1px solid #334155;" />
+        <input id="fiNat" list="fiNatList" placeholder="Country code" style="flex:1; padding:6px; border-radius:6px; background:#0b1220; color:#e2e8f0; border:1px solid #334155;" />
         <button id="fiGenerate" style="background:linear-gradient(45deg,#4ecdc4,#44a08d); border:none; color:#fff; padding:6px 12px; border-radius:6px; cursor:pointer;">Generate</button>
       </div>
+      ${datalist}
       <div id="fiResult" style="display:none;"></div>
     `;
     const modal = createStyledModal('Fake User Info', content);
@@ -480,6 +490,102 @@
     }
 
     modal.querySelector('#fiGenerate').addEventListener('click', () => generate(false));
+  }
+
+  async function showTempMailModal() {
+    const { tempMailApiKey = '' } = await chrome.storage.local.get('tempMailApiKey');
+    if (!tempMailApiKey) { showNotification('Set Temp Mail API key in options'); return; }
+    const BASE_URL = 'https://hub.juheapi.com/temp_mail/v1';
+    let currentMailboxId = null;
+    let refreshTimer = null;
+    const seen = new Set();
+    const modal = createStyledModal('Temporary Email', `
+      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+        <button id="tmCreate" style="background:linear-gradient(45deg,#4ecdc4,#44a08d); border:none; color:#fff; padding:6px 12px; border-radius:6px; cursor:pointer;">Create</button>
+        <input id="tmEmail" type="text" readonly style="flex:1; padding:6px; border-radius:6px; background:#0b1220; color:#e2e8f0; border:1px solid #334155;" />
+        <button id="tmCopy" style="background:#22c55e;border:none;color:#fff;padding:6px 12px;border-radius:6px;cursor:pointer;">Copy</button>
+      </div>
+      <div style="display:flex; gap:10px; margin-bottom:10px;">
+        <button id="tmRefresh" style="background:linear-gradient(45deg,#ff9ff3,#feca57); border:none; color:#fff; padding:6px 12px; border-radius:6px; cursor:pointer;">Refresh Inbox</button>
+        <button id="tmDelete" style="background:#dc2626;border:none;color:#fff;padding:6px 12px;border-radius:6px;cursor:pointer;">Delete</button>
+      </div>
+      <div id="tmStatus" style="color:#e2e8f0;margin-bottom:10px;"></div>
+      <div id="tmMessages" style="max-height:200px; overflow-y:auto;"></div>
+    `);
+
+    const emailEl = modal.querySelector('#tmEmail');
+    const statusEl = modal.querySelector('#tmStatus');
+    const listEl = modal.querySelector('#tmMessages');
+
+    function setStatus(msg, err=false){
+      if (statusEl) { statusEl.textContent = msg; statusEl.style.color = err ? '#f87171' : '#e2e8f0'; }
+    }
+    function clearMailbox(){
+      currentMailboxId = null;
+      emailEl.value = '';
+      listEl.innerHTML = '';
+      if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+    }
+    async function generateTempEmail(){
+      setStatus('Generating...');
+      try{
+        const res = await fetch(`${BASE_URL}/create?key=${tempMailApiKey}`);
+        if(!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if(data.code === '0' && data.data){
+          currentMailboxId = data.data.id;
+          emailEl.value = data.data.email;
+          setStatus('Email created');
+          seen.clear();
+          await checkInbox();
+          if(refreshTimer) clearInterval(refreshTimer);
+          refreshTimer = setInterval(checkInbox, 60000);
+        }else throw new Error(data.msg || 'API error');
+      }catch(e){
+        setStatus('Error: '+e.message, true);
+      }
+    }
+    async function checkInbox(){
+      if(!currentMailboxId){ setStatus('No email generated'); return; }
+      try{
+        const res = await fetch(`${BASE_URL}/messages?key=${tempMailApiKey}&id=${currentMailboxId}`);
+        if(!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const msgs = data.data || [];
+        renderMessages(msgs);
+        for(const m of msgs){
+          if(!seen.has(m.id)){
+            seen.add(m.id);
+            chrome.runtime.sendMessage({ type: 'SHOW_NOTIFICATION', title: m.from || 'Temp Mail', message: m.subject || '' });
+          }
+        }
+        setStatus(`Found ${msgs.length} message(s).`);
+      }catch(e){
+        setStatus('Error: '+e.message, true);
+      }
+    }
+    function renderMessages(msgs){
+      if(!msgs.length){ listEl.textContent = 'No messages'; return; }
+      listEl.innerHTML = msgs.map(m=>`<div class="tm-msg" data-id="${m.id}" style="padding:6px; border-bottom:1px solid #334155; cursor:pointer;">
+        <div><strong>${m.from || 'Unknown'}</strong></div>
+        <div>${m.subject || ''}</div>
+        <div style="font-size:12px; color:#94a3b8;">${(m.text || m.body || '').slice(0,40)}</div>
+      </div>`).join('');
+      listEl.querySelectorAll('.tm-msg').forEach(div=>div.addEventListener('click',()=>{
+        const id = div.getAttribute('data-id');
+        const msg = msgs.find(x=>String(x.id)===id);
+        if(msg){
+          const body = msg.text || msg.body || '';
+          createStyledModal('Mail from '+(msg.from||''), `<div style="max-height:300px;overflow:auto;white-space:pre-wrap;color:#e2e8f0;">${body}</div>
+            <div style="text-align:center;margin-top:10px;"><a href="data:text/plain;charset=utf-8,${encodeURIComponent(body)}" download="mail.txt" style="color:#22c55e;">Download</a></div>`);
+        }
+      }));
+    }
+
+    modal.querySelector('#tmCreate').addEventListener('click', generateTempEmail);
+    modal.querySelector('#tmRefresh').addEventListener('click', checkInbox);
+    modal.querySelector('#tmCopy').addEventListener('click', ()=>{ if(emailEl.value){ navigator.clipboard.writeText(emailEl.value); showNotification('Email copied'); }});
+    modal.querySelector('#tmDelete').addEventListener('click', ()=>{ clearMailbox(); setStatus('Mailbox cleared'); });
   }
 
   function showLastAnswerModal(answer) {
@@ -1196,7 +1302,7 @@
             break;
           }
           case 'GET_PAGE_DIMENSIONS': {
-            sendResponse({ ok: true, width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight, viewHeight: window.innerHeight });
+            sendResponse({ ok: true, width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight, viewHeight: window.innerHeight, dpr: window.devicePixelRatio });
             break;
           }
           case 'SCROLL_TO': {

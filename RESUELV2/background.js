@@ -1,7 +1,7 @@
 // background.js (MV3 service worker)
 // - OpenRouter chat completions
 // - OCR via OCR.space
-// - Public IP via IPQS with fallback services
+// - Public IP via ipdata with fallback services
 
 const DEFAULTS = {
   openrouterModel: 'google/gemini-2.0-flash-exp:free',
@@ -94,9 +94,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ ok: true, info });
           break;
         }
-        case 'TEST_IPQS': {
-          const info = await testIPQS(message.key);
+        case 'TEST_IPDATA': {
+          const info = await testIPData(message.key);
           sendResponse(info);
+          break;
+        }
+        case 'SHOW_NOTIFICATION': {
+          const { title, message: body } = message;
+          if (title && body) {
+            chrome.notifications.create('', {
+              type: 'basic',
+              iconUrl: 'icons/icon128.png',
+              title,
+              message: body
+            });
+            sendResponse({ ok: true });
+          } else {
+            sendResponse({ ok: false, error: 'Missing fields' });
+          }
           break;
         }
         case 'GET_TAB_ID': {
@@ -250,11 +265,11 @@ async function captureFullPageOCR(tabId, ocrLang) {
     const shots = [];
     for (let y = 0; y < dims.height; y += dims.viewHeight) {
       await chrome.tabs.sendMessage(tabId, { type: 'SCROLL_TO', y });
-      await new Promise(r => setTimeout(r, 100));
+      await new Promise(r => setTimeout(r, 300));
       shots.push(await chrome.tabs.captureVisibleTab({ format: 'png' }));
     }
     await chrome.tabs.sendMessage(tabId, { type: 'SCROLL_TO', y: 0 });
-    const stitched = await stitchImages(shots, dims.width, dims.height, dims.viewHeight);
+    const stitched = await stitchImages(shots);
     const text = await performOCR(stitched, ocrLang);
     return { ok: true, text };
   } catch (e) {
@@ -262,15 +277,19 @@ async function captureFullPageOCR(tabId, ocrLang) {
   }
 }
 
-async function stitchImages(images, width, totalHeight, step) {
+async function stitchImages(images) {
+  const bitmaps = await Promise.all(images.map(async dataUrl => {
+    const blob = await (await fetch(dataUrl)).blob();
+    return await createImageBitmap(blob);
+  }));
+  const width = Math.max(...bitmaps.map(b => b.width));
+  const totalHeight = bitmaps.reduce((s, b) => s + b.height, 0);
   const canvas = new OffscreenCanvas(width, totalHeight);
   const ctx = canvas.getContext('2d');
   let y = 0;
-  for (const dataUrl of images) {
-    const blob = await (await fetch(dataUrl)).blob();
-    const bmp = await createImageBitmap(blob);
+  for (const bmp of bitmaps) {
     ctx.drawImage(bmp, 0, y);
-    y += step;
+    y += bmp.height;
   }
   const blob = await canvas.convertToBlob();
   return await blobToDataURL(blob);
@@ -285,27 +304,21 @@ function blobToDataURL(blob) {
 }
 
 async function getPublicIP() {
-  const { ipqsApiKey = '' } = await chrome.storage.local.get('ipqsApiKey');
-  if (ipqsApiKey) {
+  const { ipdataApiKey = '' } = await chrome.storage.local.get('ipdataApiKey');
+  if (ipdataApiKey) {
     try {
-      const ipRes = await fetch('https://api.ipify.org?format=json');
-      const ipData = await ipRes.json();
-      const data = await fetchIPQS(ipData.ip, ipqsApiKey);
+      const data = await fetchIPData(ipdataApiKey);
       return {
-        ip: data?.ip_address || ipData.ip,
-        country: data?.country_code || data?.country_name || 'Unknown',
+        ip: data?.ip || 'Unknown',
+        country: data?.country_name || data?.country_code || 'Unknown',
         city: data?.city || 'Unknown',
-        postal: data?.postal_code || data?.zip_code || 'Unknown',
-        isp: data?.ISP || data?.organization || 'Unknown',
-        timezone: data?.timezone || 'Unknown',
-        fraud_score: data?.fraud_score,
-        proxy: data?.proxy,
-        vpn: data?.vpn,
-        tor: data?.tor,
+        postal: data?.postal || 'Unknown',
+        isp: data?.asn?.name || 'Unknown',
+        timezone: data?.time_zone?.name || 'Unknown',
         raw: data
       };
     } catch (e) {
-      console.error('IPQS error:', e);
+      console.error('ipdata error:', e);
     }
   }
 
@@ -392,20 +405,16 @@ async function getPublicIP() {
   throw new Error('Unable to retrieve IP information');
 }
 
-async function fetchIPQS(ip, key) {
-  const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
-  const lang = 'en';
-  const url = `https://www.ipqualityscore.com/api/json/ip/${key}/${ip}?user_agent=${encodeURIComponent(ua)}&user_language=${encodeURIComponent(lang)}&strictness=1&allow_public_access_points=true`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`IPQS API failed: ${res.status}`);
-  const data = await res.json();
-  if (data?.success === false) throw new Error(data.message || 'IPQS error');
-  return data;
+async function fetchIPData(key) {
+  const url = `https://api.ipdata.co/?api-key=${key}`;
+  const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+  if (!res.ok) throw new Error(`ipdata API failed: ${res.status}`);
+  return await res.json();
 }
 
-async function testIPQS(key){
+async function testIPData(key) {
   try {
-    const data = await fetchIPQS('8.8.8.8', key);
+    const data = await fetchIPData(key);
     return { ok: true, data };
   } catch (e) {
     return { ok: false, error: e.message };
