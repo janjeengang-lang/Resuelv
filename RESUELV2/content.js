@@ -1,4 +1,3 @@
-
 // content.js
 // - Extract selected text or from DOM
 // - Overlay to select OCR region
@@ -34,6 +33,7 @@
     if (pr) {
       const text = window.getSelection().toString().trim();
       if (!text) return;
+      // Use integrated rainbow modal for a consistent UX instead of a simple alert.
       createRainbowModal(text, pr.id);
       e.preventDefault();
     }
@@ -966,6 +966,7 @@
       }
 
       // Save context
+      // Save the specific prompt name for better context tracking.
       await saveContext({ q: questionText, a: answer, promptName });
 
     } catch (e) {
@@ -1018,6 +1019,7 @@
         const act = STATE.modal.querySelector('.modal-actions');
         loadEl.style.display='block'; loadEl.textContent='Generating answer...';
         ansEl.style.display='none'; act.style.display='none';
+        // Reuse the main generation function for consistency and maintainability.
         generateAnswer(questionText, pr.id);
       }
     });
