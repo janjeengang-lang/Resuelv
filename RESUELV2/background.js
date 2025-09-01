@@ -1,7 +1,7 @@
 // background.js (MV3 service worker)
 // - OpenRouter chat completions
 // - OCR via OCR.space
-// - Public IP via IPData with fallback services
+// - Public IP via IPQS with fallback services
 
 const DEFAULTS = {
   openrouterModel: 'google/gemini-2.0-flash-exp:free',
@@ -94,8 +94,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ ok: true, info });
           break;
         }
-        case 'TEST_IPDATA': {
-          const info = await testIPData(message.key);
+        case 'TEST_IPQS': {
+          const info = await testIPQS(message.key);
           sendResponse(info);
           break;
         }
@@ -302,25 +302,27 @@ function blobToDataURL(blob) {
 }
 
 async function getPublicIP() {
-  const { ipdataApiKey = '' } = await chrome.storage.local.get('ipdataApiKey');
-  if (ipdataApiKey) {
+  const { ipqsApiKey = '' } = await chrome.storage.local.get('ipqsApiKey');
+  if (ipqsApiKey) {
     try {
-      const data = await fetchIPData(ipdataApiKey);
+      const ipRes = await fetch('https://api.ipify.org?format=json');
+      const ipData = await ipRes.json();
+      const data = await fetchIPQS(ipData.ip, ipqsApiKey);
       return {
-        ip: data.ip,
-        country: data.country_name,
-        city: data.city,
-        postal: data.postal,
-        isp: data.asn?.name,
-        timezone: data.time_zone?.name,
-        proxy: data.threat?.is_proxy,
-        vpn: data.threat?.is_vpn,
-        tor: data.threat?.is_tor,
-        is_anonymous: data.threat?.is_anonymous,
+        ip: data?.ip_address || ipData.ip,
+        country: data?.country_code || data?.country_name || 'Unknown',
+        city: data?.city || 'Unknown',
+        postal: data?.postal_code || data?.zip_code || 'Unknown',
+        isp: data?.ISP || data?.organization || 'Unknown',
+        timezone: data?.timezone || 'Unknown',
+        fraud_score: data?.fraud_score,
+        proxy: data?.proxy,
+        vpn: data?.vpn,
+        tor: data?.tor,
         raw: data
       };
     } catch (e) {
-      console.error('IPData error:', e);
+      console.error('IPQS error:', e);
     }
   }
 
@@ -407,16 +409,20 @@ async function getPublicIP() {
   throw new Error('Unable to retrieve IP information');
 }
 
-async function fetchIPData(key) {
-  const url = `https://api.ipdata.co/?api-key=${key}`;
+async function fetchIPQS(ip, key) {
+  const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
+  const lang = 'en';
+  const url = `https://www.ipqualityscore.com/api/json/ip/${key}/${ip}?user_agent=${encodeURIComponent(ua)}&user_language=${encodeURIComponent(lang)}&strictness=1&allow_public_access_points=true`;
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`IPData API failed: ${res.status}`);
-  return await res.json();
+  if (!res.ok) throw new Error(`IPQS API failed: ${res.status}`);
+  const data = await res.json();
+  if (data?.success === false) throw new Error(data.message || 'IPQS error');
+  return data;
 }
 
-async function testIPData(key){
+async function testIPQS(key){
   try {
-    const data = await fetchIPData(key);
+    const data = await fetchIPQS('8.8.8.8', key);
     return { ok: true, data };
   } catch (e) {
     return { ok: false, error: e.message };

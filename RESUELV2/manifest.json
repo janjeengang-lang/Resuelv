@@ -1,3 +1,4 @@
+--- START OF FILE manifest.json ---
 {
   "manifest_version": 3,
   "name": "Resuelv+",
@@ -44,17 +45,12 @@
     "https://api.cerebras.ai/*",
     "https://api.ipdata.co/*",
     "https://randomuser.me/*",
-    "https://hub.juheapi.com/*"
+    "https://hub.juheapi.com/*",
+    "https://www.ipqualityscore.com/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "run_at": "document_idle",
-      "all_frames": true
-    }
-  ]
-}
+--- END OF FILE manifest.json ---

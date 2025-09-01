@@ -1,3 +1,4 @@
+--- START OF FILE src/popup.js ---
 // popup.js
 const els = {
   status: document.getElementById('status'),
@@ -33,23 +34,20 @@ const allButtons = ['btnOpen', 'btnMCQ', 'btnScale', 'btnYesNo', 'btnAuto', 'btn
 function updateButtonVisibility() {
   const startIndex = currentPage * buttonsPerPage;
   const endIndex = startIndex + buttonsPerPage;
-  
+
   allButtons.forEach((btnId, index) => {
     const btn = document.getElementById(btnId);
     if (btn) {
       btn.style.display = (index >= startIndex && index < endIndex) ? 'flex' : 'none';
     }
   });
-  
-  // Update navigation buttons
+
   const prevBtn = document.getElementById('prevBtn');
   const nextBtn = document.getElementById('nextBtn');
-  
   if (prevBtn) prevBtn.disabled = currentPage === 0;
   if (nextBtn) nextBtn.disabled = (currentPage + 1) * buttonsPerPage >= allButtons.length;
 }
 
-// Navigation event listeners
 document.getElementById('prevBtn')?.addEventListener('click', () => {
   if (currentPage > 0) {
     currentPage--;
@@ -68,17 +66,21 @@ for (const id of Object.keys(btnMap)) {
   document.getElementById(id)?.addEventListener('click', () => handleMode(btnMap[id]));
 }
 
-// Initialize button visibility
 updateButtonVisibility();
 
-els.openOptions.addEventListener('click', () => chrome.runtime.openOptionsPage());
+els.openOptions?.addEventListener('click', () => chrome.runtime.openOptionsPage());
 els.viewHistory?.addEventListener('click', () => {
   chrome.tabs.create({ url: chrome.runtime.getURL('history.html') });
 });
 
 
 async function handleMode(mode){
-  if (mode === 'reset') { await chrome.storage.local.set({ contextQA: [] }); renderHistory([]); return notify('Context cleared'); }
+  if (mode === 'reset') {
+    await chrome.storage.local.set({ contextQA: [] });
+    renderHistory([]);
+    return notify('Context cleared');
+  }
+
   if (mode === 'ocr') {
     try {
       const tab = await getActiveTab();
@@ -100,6 +102,7 @@ async function handleMode(mode){
   try {
     const tab = await getActiveTab();
     await ensureContentScript(tab.id);
+
     let questionText = (await getSelectedOrDomText(tab.id)).trim();
     if (!questionText || questionText.length < 2){
       const rectRes = await chrome.tabs.sendMessage(tab.id, { type: 'START_OCR_SELECTION' });
@@ -115,8 +118,10 @@ async function handleMode(mode){
     const prompt = buildPrompt(mode, questionText, ctx);
     const gen = await chrome.runtime.sendMessage({ type:'GEMINI_GENERATE', prompt });
     if (!gen?.ok) throw new Error(gen?.error||'Generate failed');
+
     const answer = postProcess(mode, gen.result);
     els.preview.value = answer;
+
     await chrome.storage.local.set({ lastAnswer: answer });
     await saveContext({ q: questionText, a: answer, promptName: mode });
     renderHistory(await getContext());
@@ -179,8 +184,12 @@ async function saveContext(entry){ const list = await getContext(); list.push(en
 function notify(msg,isErr=false){ els.status.textContent = msg; els.status.className = 'status' + (isErr?' error':''); }
 function setBusy(on){ document.body.style.opacity = on? '0.8':'1'; }
 
-els.btnCopy.addEventListener('click', async () => { try{ await navigator.clipboard.writeText(els.preview.value); notify('Copied'); } catch(e){ notify('Copy failed', true); } });
-els.btnWrite.addEventListener('click', async () => {
+els.btnCopy?.addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(els.preview.value); notify('Copied'); }
+  catch(e){ notify('Copy failed', true); }
+});
+
+els.btnWrite?.addEventListener('click', async () => {
   try {
     const tab = await getActiveTab();
     const { typingSpeed='normal' } = await chrome.storage.local.get('typingSpeed');
@@ -271,7 +280,8 @@ async function loadIP(){
   try {
     const r = await chrome.runtime.sendMessage({ type:'GET_PUBLIC_IP' });
     if(!r?.ok) throw new Error(r?.error||'IP error');
-    const { ip, country, city, postal, isp, timezone, proxy, vpn, tor, is_anonymous } = r.info || {};
+    // Merged both `ipdata` and `ipqs` data fields to provide a comprehensive view.
+    const { ip, country, city, postal, isp, timezone, proxy, vpn, tor, is_anonymous, fraud_score } = r.info || {};
     els.ipInfoText.innerHTML = `
       <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
         <strong>IP:</strong> ${ip || 'Unknown'}
@@ -279,11 +289,11 @@ async function loadIP(){
       </div>
       <div><strong>Location:</strong> ${city || 'Unknown'}, ${country || 'Unknown'}</div>
       <div><strong>Postal:</strong> ${postal || 'Unknown'} | <strong>ISP:</strong> ${isp || 'Unknown'}</div>
-      <div><strong>Proxy:</strong> ${proxy ?? 'Unknown'} | <strong>VPN:</strong> ${vpn ?? 'Unknown'} | <strong>Tor:</strong> ${tor ?? 'Unknown'} | <strong>Anonymous:</strong> ${is_anonymous ?? 'Unknown'}</div>
+      <div><strong>Proxy:</strong> ${proxy ?? 'Unknown'} | <strong>VPN:</strong> ${vpn ?? 'Unknown'} | <strong>Tor:</strong> ${tor ?? 'Unknown'}</div>
+      <div><strong>Fraud:</strong> ${fraud_score ?? 'Unknown'} | <strong>Anonymous:</strong> ${is_anonymous ?? 'Unknown'}</div>
       <div><strong>Timezone:</strong> ${timezone || 'Unknown'}</div>
     `;
-  }
-  catch(e){
+  } catch(e){
     els.ipInfoText.textContent = 'IP: unavailable';
   }
 }
@@ -294,4 +304,4 @@ function renderHistory(list){
 }
 
 (async function init(){ renderHistory(await getContext()); loadIP(); })();
-
+--- END OF FILE src/popup.js ---
