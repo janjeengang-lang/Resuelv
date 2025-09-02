@@ -1,10 +1,18 @@
 // popup.js
+(async () => {
+  const { loggedIn } = await chrome.storage.local.get('loggedIn');
+  if (!loggedIn) { window.location.href = 'login.html'; return; }
+  const res = await chrome.runtime.sendMessage({ type: 'CHECK_AUTH', force: true });
+  if (!res?.ok) { window.location.href = 'login.html'; return; }
+})();
+
 const els = {
   status: document.getElementById('status'),
   preview: document.getElementById('preview'),
   btnWrite: document.getElementById('btnWrite'),
   btnCopy: document.getElementById('btnCopy'),
   openOptions: document.getElementById('openOptions'),
+  openCustomWeb: document.getElementById('openCustomWeb'),
   history: document.getElementById('history'),
   ipInfoText: document.getElementById('ipInfoText'),
   btnCustomPrompt: document.getElementById('btnCustomPrompt'),
@@ -68,6 +76,10 @@ for (const id of Object.keys(btnMap)) {
 updateButtonVisibility();
 
 els.openOptions?.addEventListener('click', () => chrome.runtime.openOptionsPage());
+els.openCustomWeb?.addEventListener('click', async () => {
+  const [tab] = await chrome.tabs.query({active:true,currentWindow:true});
+  await chrome.runtime.sendMessage({ type:'OPEN_CUSTOM_WEB', openerTabId: tab.id });
+});
 els.viewHistory?.addEventListener('click', () => {
   chrome.tabs.create({ url: chrome.runtime.getURL('history.html') });
 });

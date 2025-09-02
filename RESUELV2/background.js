@@ -9,24 +9,122 @@ const DEFAULTS = {
   ocrLang: 'eng',
 };
 
-chrome.runtime.onInstalled.addListener(async () => {
+const FIREBASE_API_KEY = 'AIzaSyD4tYdVWd5iqtQwZgrQLiG83GIw62hpn1U';
+
+async function forceLogout(reason = 'Your session has expired. Please log in again.') {
+  await chrome.storage.local.remove(['loggedIn', 'idToken', 'refreshToken', 'lastAuthCheck']);
+  await chrome.storage.local.set({ logoutMsg: reason });
+  updatePopup();
+  updateContextMenu();
+}
+
+async function checkAuthValidity(force = false) {
+  const { idToken, refreshToken, lastAuthCheck = 0 } = await chrome.storage.local.get([
+    'idToken',
+    'refreshToken',
+    'lastAuthCheck'
+  ]);
+  if (!idToken || !refreshToken) {
+    await forceLogout();
+    return { ok: false };
+  }
+  const now = Date.now();
+  if (!force && now - lastAuthCheck < 24 * 60 * 60 * 1000) {
+    return { ok: true };
+  }
   try {
-    const cur = await chrome.storage.local.get(Object.keys(DEFAULTS));
-    const toSet = {};
-    for (const [k, v] of Object.entries(DEFAULTS)) if (cur[k] === undefined) toSet[k] = v;
-    if (Object.keys(toSet).length) await chrome.storage.local.set(toSet);
-    
-    // Create context menu
-    await chrome.contextMenus.removeAll();
+    const lookup = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken })
+      }
+    );
+    const data = await lookup.json();
+    if (!data.error) {
+      await chrome.storage.local.set({ lastAuthCheck: now });
+      return { ok: true };
+    }
+    const code = data.error.message;
+    if (code === 'TOKEN_EXPIRED' || code === 'INVALID_ID_TOKEN') {
+      const refRes = await fetch(
+        `https://securetoken.googleapis.com/v1/token?key=${FIREBASE_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: `grant_type=refresh_token&refresh_token=${refreshToken}`
+        }
+      );
+      const refData = await refRes.json();
+      if (!refData.error) {
+        await chrome.storage.local.set({
+          idToken: refData.id_token,
+          refreshToken: refData.refresh_token,
+          lastAuthCheck: now
+        });
+        return { ok: true };
+      }
+    }
+  } catch (e) {
+    console.error('Auth check error:', e);
+    return { ok: true }; // Network issues won't log user out
+  }
+  await forceLogout();
+  return { ok: false };
+}
+
+async function updatePopup() {
+  const { loggedIn } = await chrome.storage.local.get('loggedIn');
+  const popup = loggedIn ? 'popup.html' : 'login.html';
+  await chrome.action.setPopup({ popup });
+}
+
+async function updateContextMenu() {
+  const { loggedIn } = await chrome.storage.local.get('loggedIn');
+  await chrome.contextMenus.removeAll();
+  if (loggedIn) {
     chrome.contextMenus.create({
       id: 'sendToResuelv',
       title: 'Send to Resuelv',
       contexts: ['selection'],
       documentUrlPatterns: ['<all_urls>']
     });
+  }
+}
+
+updatePopup();
+updateContextMenu();
+checkAuthValidity(true);
+chrome.runtime.onStartup.addListener(() => {
+  updatePopup();
+  updateContextMenu();
+  checkAuthValidity(true);
+});
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes.loggedIn) {
+    updatePopup();
+    updateContextMenu();
+  }
+});
+
+chrome.runtime.onInstalled.addListener(async () => {
+  try {
+    const cur = await chrome.storage.local.get(Object.keys(DEFAULTS));
+    const toSet = {};
+    for (const [k, v] of Object.entries(DEFAULTS)) if (cur[k] === undefined) toSet[k] = v;
+    if (Object.keys(toSet).length) await chrome.storage.local.set(toSet);
   } catch (e) {
     console.error('Error initializing defaults:', e);
   }
+  updatePopup();
+  updateContextMenu();
+  checkAuthValidity(true);
+});
+
+chrome.alarms.create('authCheck', { periodInMinutes: 24 * 60 });
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'authCheck') checkAuthValidity(true);
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
@@ -89,6 +187,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse(text);
           break;
         }
+        case 'CHECK_AUTH': {
+          const res = await checkAuthValidity(message.force);
+          sendResponse(res);
+          break;
+        }
         case 'GET_PUBLIC_IP': {
           const info = await getPublicIP();
           sendResponse({ ok: true, info });
@@ -112,6 +215,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           } else {
             sendResponse({ ok: false, error: 'Missing fields' });
           }
+          break;
+        }
+        case 'OPEN_CUSTOM_WEB': {
+          const openerTabId = message.openerTabId || sender?.tab?.id || (await getActiveTabId());
+          const { customWebSize = { width: 1000, height: 800 } } = await chrome.storage.local.get('customWebSize');
+          await chrome.windows.create({
+            url: chrome.runtime.getURL(`custom_web.html?tabId=${openerTabId}`),
+            type: 'popup',
+            width: customWebSize.width || 1000,
+            height: customWebSize.height || 800
+          });
+          sendResponse({ ok: true });
           break;
         }
         case 'GET_TAB_ID': {
