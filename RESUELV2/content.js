@@ -5,7 +5,9 @@
 // - Type text into focused field (no humanize; speed only)
 // - Floating bubble with rainbow modal
 
-(() => {
+function init() {
+  if (window.zepraInit) return;
+  window.zepraInit = true;
   const STATE = {
     overlay: null,
     rectEl: null,
@@ -46,10 +48,10 @@
     if (STATE.bubble) return;
     
     const bubble = document.createElement('div');
-    bubble.id = 'resuelv-bubble';
+    bubble.id = 'zepra-bubble';
     bubble.innerHTML = `
       <div class="bubble-icon">
-        <img src="${chrome.runtime.getURL('icons/icon48.png')}" alt="Resuelv" />
+        <img src="${chrome.runtime.getURL('icons/zepra.svg')}" alt="Zepra" />
         <div class="bubble-glow"></div>
       </div>
     `;
@@ -61,14 +63,14 @@
       z-index: 2147483647;
       cursor: grab;
       border-radius: 50%;
-      background: linear-gradient(45deg, #ff6b6b, #4ecdc4, #45b7d1, #96ceb4, #feca57, #ff9ff3, #54a0ff);
-      background-size: 400% 400%;
-      animation: bubbleFloat 3s ease-in-out infinite, rainbowGlow 2s linear infinite;
-      box-shadow: 0 4px 20px rgba(255, 107, 107, 0.4);
+      background: #000;
+      box-shadow: 0 0 10px #39ff14, 0 0 20px #ffe600;
       display: flex;
       align-items: center;
       justify-content: center;
       transition: transform 0.3s ease;
+      border: 2px solid #39ff14;
+      animation: bubbleFloat 3s ease-in-out infinite;
     `;
 
     const style = document.createElement('style');
@@ -78,15 +80,9 @@
         50% { transform: translateY(-10px) scale(1.05); }
       }
       
-      @keyframes rainbowGlow {
-        0% { background-position: 0% 50%; }
-        50% { background-position: 100% 50%; }
-        100% { background-position: 0% 50%; }
-      }
-      
-      #resuelv-bubble:hover {
+      #zepra-bubble:hover {
         transform: scale(1.1) !important;
-        box-shadow: 0 6px 30px rgba(255, 107, 107, 0.6) !important;
+        box-shadow: 0 6px 30px rgba(57,255,20,0.6), 0 0 20px rgba(255,230,0,0.5) !important;
       }
       
       .bubble-icon {
@@ -111,7 +107,7 @@
         right: -5px;
         bottom: -5px;
         border-radius: 50%;
-        background: radial-gradient(circle, rgba(255,255,255,0.3) 0%, transparent 70%);
+        background: radial-gradient(circle, rgba(57,255,20,0.4) 0%, rgba(255,230,0,0.2) 40%, transparent 70%);
         animation: pulse 2s ease-in-out infinite;
       }
       
@@ -177,14 +173,14 @@
   }
 
   function showBubbleMenu() {
-    if (document.getElementById('resuelv-bubble-menu')) return;
+    if (document.getElementById('zepra-bubble-menu')) return;
     
     const menu = document.createElement('div');
-    menu.id = 'resuelv-bubble-menu';
+    menu.id = 'zepra-bubble-menu';
     menu.innerHTML = `
       <div class="bubble-menu-content">
         <div class="menu-header">
-          <h3>Resuelv+ Menu</h3>
+          <h3 class="zepra-gradient">Zepra Menu</h3>
           <button class="close-btn">&times;</button>
         </div>
         <div class="menu-items">
@@ -216,6 +212,10 @@
             <span class="menu-icon">📧</span>
             <span class="menu-text">Temp Mail</span>
           </div>
+          <div class="menu-item" data-action="custom-web">
+            <span class="menu-icon">🌐</span>
+            <span class="menu-text">Custom Web</span>
+          </div>
         </div>
       </div>
     `;
@@ -225,12 +225,12 @@
       top: 90px;
       right: 20px;
       width: 250px;
-      background: linear-gradient(135deg, #23272b 0%, #120f12 100%);
+      background: #000;
       border-radius: 15px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+      box-shadow: 0 0 20px rgba(57,255,20,0.3), 0 0 20px rgba(255,230,0,0.3);
       z-index: 2147483648;
       animation: slideIn 0.3s ease-out;
-      border: 2px solid #64077d;
+      border: 2px solid #39ff14;
     `;
 
     const menuStyle = document.createElement('style');
@@ -258,7 +258,7 @@
         margin: 0;
         font-size: 16px;
         font-weight: bold;
-        color: #ff9800;
+        color: #39ff14;
       }
       
       .close-btn {
@@ -295,11 +295,11 @@
         border-radius: 8px;
         cursor: pointer;
         transition: all 0.2s;
-        background: linear-gradient(120deg, #2b232a 60%, #4d1455be 100%);
+        background: linear-gradient(120deg, #000 60%, #39ff1480 100%);
       }
       
       .menu-item:hover {
-        background: linear-gradient(120deg, #691b93f7 60%, #9305b7 100%);
+        background: linear-gradient(120deg, #39ff1499 60%, #ffe600 100%);
         transform: translateX(5px);
       }
       
@@ -383,7 +383,10 @@
         showFakeInfoModal();
         break;
       case 'temp-mail':
-        showTempMailModal();
+        window.open('https://yopmail.com/', '_blank');
+        break;
+      case 'custom-web':
+        await chrome.runtime.sendMessage({ type: 'OPEN_CUSTOM_WEB' });
         break;
     }
   }
@@ -399,7 +402,7 @@
     const modal = createStyledModal('IP Information', `
       <div style="background: linear-gradient(120deg, #120f12 80%, #0a0f17 100%); padding: 20px; border-radius: 10px; margin: 10px 0;">
         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
-          <strong style="color: #ff9800;">IP Address:</strong>
+          <strong style="color: #39ff14;">IP Address:</strong>
           <span style="color: #e2e8f0; font-family: monospace;">${ip || 'Unknown'}</span>
           <button onclick="navigator.clipboard.writeText('${ip || ''}')" style="background: #22c55e; border: none; color: white; padding: 5px 10px; border-radius: 5px; cursor: pointer; font-size: 12px;">Copy</button>
         </div>
@@ -481,7 +484,7 @@
         btn.addEventListener('click',()=>{
           const idx = btn.getAttribute('data-write');
           const text = fields[idx].value || '';
-          const m = document.getElementById('resuelv-styled-modal');
+          const m = document.getElementById('zepra-styled-modal');
           if (m) m.remove();
           typeAnswer(text);
         });
@@ -492,114 +495,13 @@
     modal.querySelector('#fiGenerate').addEventListener('click', () => generate(false));
   }
 
-  async function showTempMailModal() {
-    const API_URL = 'https://www.1secmail.com/api/v1';
-    let currentMailbox = null;
-    let refreshTimer = null;
-    const seen = new Set();
-    const modal = createStyledModal('Temporary Email', `
-      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
-        <button id="tmCreate" style="background:linear-gradient(45deg,#4ecdc4,#44a08d); border:none; color:#fff; padding:6px 12px; border-radius:6px; cursor:pointer;">Create</button>
-        <input id="tmEmail" type="text" readonly style="flex:1; padding:6px; border-radius:6px; background:#0b1220; color:#e2e8f0; border:1px solid #334155;" />
-        <button id="tmCopy" style="background:#22c55e;border:none;color:#fff;padding:6px 12px;border-radius:6px;cursor:pointer;">Copy</button>
-      </div>
-      <div style="display:flex; gap:10px; margin-bottom:10px;">
-        <button id="tmRefresh" style="background:linear-gradient(45deg,#ff9ff3,#feca57); border:none; color:#fff; padding:6px 12px; border-radius:6px; cursor:pointer;">Refresh Inbox</button>
-        <button id="tmDelete" style="background:#dc2626;border:none;color:#fff;padding:6px 12px;border-radius:6px;cursor:pointer;">Delete</button>
-      </div>
-      <div id="tmStatus" style="color:#e2e8f0;margin-bottom:10px;"></div>
-      <div id="tmMessages" style="max-height:200px; overflow-y:auto;"></div>
-    `);
-
-    const emailEl = modal.querySelector('#tmEmail');
-    const statusEl = modal.querySelector('#tmStatus');
-    const listEl = modal.querySelector('#tmMessages');
-
-    function setStatus(msg, err=false){
-      if (statusEl) { statusEl.textContent = msg; statusEl.style.color = err ? '#f87171' : '#e2e8f0'; }
-    }
-    function clearMailbox(){
-      currentMailbox = null;
-      emailEl.value = '';
-      listEl.innerHTML = '';
-      if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
-    }
-    async function generateTempEmail(){
-      setStatus('Generating...');
-      try{
-        const res = await fetch(`${API_URL}/?action=genRandomMailbox&count=1`);
-        if(!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        const email = Array.isArray(data) ? data[0] : null;
-        if(email){
-          const [login, domain] = email.split('@');
-          currentMailbox = {login, domain};
-          emailEl.value = email;
-          setStatus('Email generated');
-          seen.clear();
-          await checkInbox();
-          if(refreshTimer) clearInterval(refreshTimer);
-          refreshTimer = setInterval(checkInbox, 60000);
-        }else throw new Error('Invalid response');
-      }catch(e){
-        setStatus('Error: '+e.message, true);
-      }
-    }
-    async function checkInbox(){
-      if(!currentMailbox){ setStatus('No email generated'); return; }
-      try{
-        const {login, domain} = currentMailbox;
-        const res = await fetch(`${API_URL}/?action=getMessages&login=${login}&domain=${domain}`);
-        if(!res.ok) throw new Error(`HTTP ${res.status}`);
-        const msgs = await res.json();
-        renderMessages(msgs);
-        for(const m of msgs){
-          if(!seen.has(m.id)){
-            seen.add(m.id);
-            chrome.runtime.sendMessage({ type: 'SHOW_NOTIFICATION', title: m.from || 'Temp Mail', message: m.subject || '' });
-          }
-        }
-        setStatus(`Found ${msgs.length} message(s).`);
-      }catch(e){
-        setStatus('Error: '+e.message, true);
-      }
-    }
-    function renderMessages(msgs){
-      if(!msgs.length){ listEl.textContent = 'No messages'; return; }
-      listEl.innerHTML = msgs.map(m=>`<div class="tm-msg" data-id="${m.id}" style="padding:6px; border-bottom:1px solid #334155; cursor:pointer;">
-        <div><strong>${m.from || 'Unknown'}</strong></div>
-        <div>${m.subject || ''}</div>
-        <div style=\"font-size:12px; color:#94a3b8;\">${m.date || ''}</div>
-      </div>`).join('');
-      listEl.querySelectorAll('.tm-msg').forEach(div=>div.addEventListener('click',async()=>{
-        const id = div.getAttribute('data-id');
-        try{
-          const {login, domain} = currentMailbox;
-          const res = await fetch(`${API_URL}/?action=readMessage&login=${login}&domain=${domain}&id=${id}`);
-          if(!res.ok) throw new Error(`HTTP ${res.status}`);
-          const msg = await res.json();
-          const body = msg.textBody || msg.body || msg.htmlBody || '';
-          createStyledModal('Mail from '+(msg.from||''), `<div style="max-height:300px;overflow:auto;white-space:pre-wrap;color:#e2e8f0;">${body}</div>
-            <div style="text-align:center;margin-top:10px;"><a href="data:text/plain;charset=utf-8,${encodeURIComponent(body)}" download="mail.txt" style="color:#22c55e;">Download</a></div>`);
-        }catch(err){
-          setStatus('Error: '+err.message, true);
-        }
-      }));
-    }
-
-    modal.querySelector('#tmCreate').addEventListener('click', generateTempEmail);
-    modal.querySelector('#tmRefresh').addEventListener('click', checkInbox);
-    modal.querySelector('#tmCopy').addEventListener('click', ()=>{ if(emailEl.value){ navigator.clipboard.writeText(emailEl.value); showNotification('Email copied'); }});
-    modal.querySelector('#tmDelete').addEventListener('click', ()=>{ clearMailbox(); setStatus('Mailbox cleared'); });
-  }
-
   function showLastAnswerModal(answer) {
     const text = (answer || '').trim();
     if (!text) { showNotification('No last answer available'); return; }
     const modal = createStyledModal('Last Answer', `
       <div style="background: linear-gradient(120deg, #120f12 80%, #0a0f17 100%); padding: 20px; border-radius: 10px; margin: 10px 0;">
         <div id="lastAnswerText" style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; margin-bottom: 20px; max-height: 200px; overflow-y: auto; color: #e2e8f0;">${text}</div>
-        <div id="lastAnswerCountdown" style="display:none; text-align:center; font-size:24px; font-weight:bold; color:#ff9800; margin-bottom:20px;">3</div>
+        <div id="lastAnswerCountdown" style="display:none; text-align:center; font-size:24px; font-weight:bold; color:#39ff14; margin-bottom:20px;">3</div>
         <div id="lastAnswerBtns" style="display: flex; justify-content: center; gap: 10px;">
           <button id="lastAnswerType" style="background: linear-gradient(45deg, #4ecdc4, #44a08d); border: none; color: white; padding: 10px 20px; border-radius: 25px; cursor: pointer; font-weight: bold;">Start Typing</button>
           <button id="lastAnswerCopy" style="background: linear-gradient(45deg, #ff6b6b, #feca57); border: none; color: white; padding: 10px 20px; border-radius: 25px; cursor: pointer; font-weight: bold;">Manual Entry</button>
@@ -624,7 +526,7 @@
               cd.textContent = count;
             } else {
               clearInterval(timer);
-              const m = document.getElementById('resuelv-styled-modal');
+              const m = document.getElementById('zepra-styled-modal');
               if (m) m.remove();
               typeAnswer(text, { skipCountdown: true });
             }
@@ -633,7 +535,7 @@
       });
       document.getElementById('lastAnswerCopy')?.addEventListener('click', () => {
         navigator.clipboard.writeText(text);
-        const m = document.getElementById('resuelv-styled-modal'); if (m) m.remove();
+        const m = document.getElementById('zepra-styled-modal'); if (m) m.remove();
         showNotification('Answer copied to clipboard');
       });
     }, 100);
@@ -647,7 +549,7 @@
           <div id="newSurveyText" style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; margin: 15px 0; max-height: 150px; overflow-y: auto;">
             <pre style="color: #94a3b8; white-space: pre-wrap; font-size: 14px; margin: 0;">${clipboardText || 'No text in clipboard'}</pre>
           </div>
-          <div id="newSurveyCountdown" style="display:none; text-align:center; font-size:24px; font-weight:bold; color:#ff9800; margin-bottom:20px;">3</div>
+          <div id="newSurveyCountdown" style="display:none; text-align:center; font-size:24px; font-weight:bold; color:#39ff14; margin-bottom:20px;">3</div>
           <div id="newSurveyBtns" style="display: flex; justify-content: center; gap: 10px; margin-top: 20px;">
             <button id="writeNowBtn" style="background: linear-gradient(45deg, #4ecdc4, #44a08d); border: none; color: white; padding: 12px 24px; border-radius: 25px; cursor: pointer; font-weight: bold; font-size: 14px;">Start Typing</button>
             <button id="manualEntryBtn" style="background: linear-gradient(45deg, #ff6b6b, #feca57); border: none; color: white; padding: 12px 24px; border-radius: 25px; cursor: pointer; font-weight: bold; font-size: 14px;">Manual Entry</button>
@@ -678,7 +580,7 @@
                   cd.textContent = count;
                 } else {
                   clearInterval(interval);
-                  const m = document.getElementById('resuelv-styled-modal');
+                  const m = document.getElementById('zepra-styled-modal');
                   if (m) m.remove();
                   typeAnswer(clipboardText, { skipCountdown: true });
                 }
@@ -689,7 +591,7 @@
         if (manualBtn) {
           manualBtn.addEventListener('click', () => {
             navigator.clipboard.writeText(clipboardText || '');
-            const m = document.getElementById('resuelv-styled-modal'); if (m) m.remove();
+            const m = document.getElementById('zepra-styled-modal'); if (m) m.remove();
             showNotification('Answer copied to clipboard');
           });
         }
@@ -761,7 +663,7 @@
       
       if (sendBtn) {
         sendBtn.addEventListener('click', () => {
-          const modal = document.getElementById('resuelv-styled-modal');
+          const modal = document.getElementById('zepra-styled-modal');
           if (modal) modal.remove();
           createRainbowModal(extractedText);
         });
@@ -769,7 +671,7 @@
       
       if (retakeBtn) {
         retakeBtn.addEventListener('click', () => {
-          const modal = document.getElementById('resuelv-styled-modal');
+          const modal = document.getElementById('zepra-styled-modal');
           if (modal) modal.remove();
           startOCRCapture();
         });
@@ -779,11 +681,11 @@
 
   function createStyledModal(title, content, onClose) {
     // Remove existing modal
-    const existing = document.getElementById('resuelv-styled-modal');
+    const existing = document.getElementById('zepra-styled-modal');
     if (existing) existing.remove();
 
     const modal = document.createElement('div');
-    modal.id = 'resuelv-styled-modal';
+    modal.id = 'zepra-styled-modal';
     modal.innerHTML = `
       <div class="styled-modal-content">
         <div class="styled-modal-header">
@@ -825,7 +727,7 @@
         width: 90%;
         max-height: 80vh;
         overflow: hidden;
-        border: 3px solid #64077d;
+        border: 3px solid #39ff14;
         box-shadow: 0 10px 30px rgba(0,0,0,0.3);
       }
       
@@ -840,7 +742,7 @@
       
       .styled-modal-header h3 {
         margin: 0;
-        color: #ff9800;
+        color: #39ff14;
         font-size: 18px;
         font-weight: bold;
       }
@@ -911,7 +813,7 @@
       white-space: pre-line;
       text-align: center;
       animation: slideDown 0.3s ease-out;
-      border: 2px solid #64077d;
+      border: 2px solid #39ff14;
     `;
     
     notification.textContent = message;
@@ -927,11 +829,11 @@
     if (STATE.modal) return;
 
     const modal = document.createElement('div');
-    modal.id = 'resuelv-modal';
+    modal.id = 'zepra-modal';
     modal.innerHTML = `
       <div class="modal-content">
         <div class="modal-header">
-          <h3>Resuelv+ Answer</h3>
+          <h3 class="zepra-gradient">Zepra Answer</h3>
           <button class="modal-close">&times;</button>
         </div>
         <div class="modal-body">
@@ -1004,7 +906,7 @@
       
       .modal-header h3 {
         margin: 0;
-        color: #ff9800;
+        color: #39ff14;
         font-size: 18px;
         font-weight: bold;
       }
@@ -1100,7 +1002,7 @@
       }
 
       .btn-use-prompt {
-        background: linear-gradient(45deg, #ffd600, #ff9800) !important;
+        background: linear-gradient(45deg, #ffd600, #39ff14) !important;
         color: #181c20 !important;
       }
     `;
@@ -1301,7 +1203,7 @@
             sendResponse({ ok: true, dataUrl: cropped });
             break;
           }
-          case 'SHOW_RESUELV_MODAL': {
+          case 'SHOW_ZEPRA_MODAL': {
             createRainbowModal(msg.text);
             sendResponse({ ok: true });
             break;
@@ -1381,7 +1283,7 @@
     return new Promise((resolve) => {
       let count = sec;
       const el = document.createElement('div');
-      el.style.cssText = 'position:fixed;top:20px;right:20px;padding:8px 14px;background:rgba(0,0,0,0.7);color:#ff9800;font-size:24px;border-radius:8px;z-index:2147483647;';
+      el.style.cssText = 'position:fixed;top:20px;right:20px;padding:8px 14px;background:rgba(0,0,0,0.7);color:#39ff14;font-size:24px;border-radius:8px;z-index:2147483647;';
       el.textContent = count;
       document.body.appendChild(el);
       const timer = setInterval(() => {
@@ -1462,7 +1364,7 @@
   function showSelectionButton(rect, text) {
     removeSelectionButton();
     const btn = document.createElement('div');
-    btn.id = 'resuelv-gen-btn';
+    btn.id = 'zepra-gen-btn';
     btn.textContent = 'Generate Answer';
     document.body.appendChild(btn);
     const btnWidth = btn.offsetWidth || 120;
@@ -1471,7 +1373,7 @@
     let top = window.scrollY + rect.top - 30;
     left = Math.min(window.scrollX + window.innerWidth - btnWidth - 10, Math.max(window.scrollX + 10, left));
     top = Math.min(window.scrollY + window.innerHeight - btnHeight - 10, Math.max(window.scrollY + 10, top));
-    btn.style.cssText = `position:absolute;left:${left}px;top:${top}px;z-index:2147483647;background:#23272b;color:#ff9800;padding:4px 8px;border-radius:6px;font-size:12px;box-shadow:0 0 8px rgba(255,152,0,0.7);cursor:pointer;transition:transform 0.2s;`;
+    btn.style.cssText = `position:absolute;left:${left}px;top:${top}px;z-index:2147483647;background:#23272b;color:#39ff14;padding:4px 8px;border-radius:6px;font-size:12px;box-shadow:0 0 8px rgba(255,152,0,0.7);cursor:pointer;transition:transform 0.2s;`;
     btn.addEventListener('mouseenter', () => { btn.style.transform = 'scale(1.05)'; });
     btn.addEventListener('mouseleave', () => { btn.style.transform = 'scale(1)'; });
     btn.addEventListener('mousedown', (e) => {
@@ -1515,4 +1417,11 @@
   `;
   document.head.appendChild(globalStyle);
 
-})();
+}
+
+chrome.storage.local.get('loggedIn', ({ loggedIn }) => {
+  if (loggedIn) init();
+});
+chrome.storage.onChanged.addListener((chg, area) => {
+  if (area === 'local' && chg.loggedIn?.newValue) init();
+});

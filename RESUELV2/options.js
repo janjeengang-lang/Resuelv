@@ -22,7 +22,20 @@ const els = {
   savePrompt: document.getElementById('savePrompt'),
   cancelPrompt: document.getElementById('cancelPrompt'),
   promptTable: document.getElementById('promptTable')?.querySelector('tbody'),
+  siteName: document.getElementById('siteName'),
+  siteUrl: document.getElementById('siteUrl'),
+  addSite: document.getElementById('addSite'),
+  sitesList: document.getElementById('sitesList'),
+  webWidth: document.getElementById('webWidth'),
+  webHeight: document.getElementById('webHeight'),
 };
+
+const DEFAULT_SITES = [
+  { name:'Easemate Chat', url:'https://www.easemate.ai/webapp/chat' },
+  { name:'Whoer', url:'https://whoer.net/' },
+  { name:'AI Humanizer', url:'https://smallseotools.com/ai-humanizer/' },
+  { name:'Prinsh Notepad', url:'https://notepad.prinsh.com/' }
+];
 
 function notify(msg, isErr = false) {
   // Add guard to prevent errors if the status element is missing.
@@ -43,6 +56,7 @@ async function load() {
       'ipdataApiKey',
       'typingSpeed',
       'ocrLang',
+      'customWebSize',
     ]);
 
     els.aiProvider.value     = s.aiProvider || 'openrouter';
@@ -54,8 +68,11 @@ async function load() {
     els.ipdataKey.value      = s.ipdataApiKey || '';
     els.typingSpeed.value    = s.typingSpeed || 'normal';
     els.ocrLang.value        = s.ocrLang || 'eng';
+    els.webWidth.value       = s.customWebSize?.width || 1000;
+    els.webHeight.value      = s.customWebSize?.height || 800;
 
     await loadPrompts();
+    await loadSites();
     console.log('Settings loaded successfully');
   } catch (e) {
     console.error('Error loading settings:', e);
@@ -68,6 +85,15 @@ let editingId = null;
 async function loadPrompts() {
   const { customPrompts = [] } = await chrome.storage.sync.get('customPrompts');
   renderPromptTable(customPrompts);
+}
+
+async function loadSites(){
+  let { customSites = [] } = await chrome.storage.local.get('customSites');
+  if(!customSites.length){
+    customSites = DEFAULT_SITES;
+    await chrome.storage.local.set({ customSites });
+  }
+  renderSites(customSites);
 }
 
 function renderPromptTable(list) {
@@ -121,6 +147,28 @@ function renderPromptTable(list) {
   );
 }
 
+function renderSites(list){
+  if(!els.sitesList) return;
+  els.sitesList.innerHTML = '';
+  list.forEach((s, idx) => {
+    const li = document.createElement('li');
+    li.style.display = 'flex';
+    li.style.justifyContent = 'space-between';
+    li.style.alignItems = 'center';
+    li.style.marginBottom = '6px';
+    li.innerHTML = `<span>${s.name}</span><button class="btn small warn" data-del="${idx}">Delete</button>`;
+    els.sitesList.appendChild(li);
+  });
+  els.sitesList.querySelectorAll('button[data-del]').forEach(btn =>
+    btn.addEventListener('click', async e => {
+      const idx = Number(e.currentTarget.getAttribute('data-del'));
+      list.splice(idx,1);
+      await chrome.storage.local.set({customSites: list});
+      renderSites(list);
+    })
+  );
+}
+
 function resetPromptForm() {
   els.promptName.value = '';
   els.promptTags.value = '';
@@ -130,6 +178,18 @@ function resetPromptForm() {
 }
 
 els.cancelPrompt?.addEventListener('click', resetPromptForm);
+
+els.addSite?.addEventListener('click', async () => {
+  const name = els.siteName.value.trim();
+  const url = els.siteUrl.value.trim();
+  if (!name || !url) { notify('Name and URL required', true); return; }
+  const { customSites = [] } = await chrome.storage.local.get('customSites');
+  customSites.push({ name, url });
+  await chrome.storage.local.set({ customSites });
+  els.siteName.value = '';
+  els.siteUrl.value = '';
+  renderSites(customSites);
+});
 
 els.savePrompt?.addEventListener('click', async () => {
   const name = els.promptName.value.trim();
@@ -168,6 +228,10 @@ els.save?.addEventListener('click', async () => {
       ipdataApiKey:      els.ipdataKey.value.trim(),
       typingSpeed:       els.typingSpeed.value,
       ocrLang:           els.ocrLang.value,
+      customWebSize:     {
+        width: Number(els.webWidth.value) || 1000,
+        height: Number(els.webHeight.value) || 800,
+      },
     });
     notify('Saved');
     console.log('Settings saved successfully');

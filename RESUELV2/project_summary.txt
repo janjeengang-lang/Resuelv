@@ -1,8 +1,8 @@
-# Resuelv+ Project Summary
+# Zepra Project Summary
 
 ## 1. Core Idea
 
-Resuelv+ is a Chrome extension designed to assist users in completing surveys by leveraging AI. It provides AI-generated answers, OCR capabilities, IP information, and a suite of tools to streamline the survey-taking process. The extension is a heavily modified and improved version of an earlier project, "RESUELV1," with a focus on a rich user experience, advanced features, and a consistent, visually appealing theme.
+Zepra is a Chrome extension designed to assist users in completing surveys by leveraging AI. It provides AI-generated answers, OCR capabilities, IP information, and a suite of tools to streamline the survey-taking process. The extension is a heavily modified and improved version of an earlier project, "RESUELV1," with a focus on a rich user experience, advanced features, and a consistent, visually appealing theme.
 
 ## 2. Key Features
 
@@ -14,7 +14,7 @@ Resuelv+ is a Chrome extension designed to assist users in completing surveys by
 
 ### 2.2. User Interface and Experience
 - **Floating Bubble:** An animated, interactive bubble with a rainbow glow and lighting effects is present on every page, providing quick access to the extension's features.
-- **Context Menu Integration:** Replaces a generic "Generate" button with a "Send to Resuelv" option in the right-click context menu for selected text.
+- **Context Menu Integration:** Replaces a generic "Generate" button with a "Send to Zepra" option in the right-click context menu for selected text.
 - **Interactive Modals:**
     - **Rainbow Modal:** A visually stunning modal with an animated rainbow border for displaying AI-generated answers.
     - **OCR Modal:** A dedicated window for showing OCR results with options to "Send to AI" or "Retake."
