@@ -282,6 +282,24 @@
       </table>
     </div>
 
+    <div class="group">
+      <div class="subtitle">Custom Sites</div>
+      <form id="siteForm">
+        <label class="row">
+          <span>Name</span>
+          <input id="siteName" type="text" />
+        </label>
+        <label class="row">
+          <span>URL</span>
+          <input id="siteUrl" type="url" placeholder="https://example.com/" />
+        </label>
+        <div class="row end">
+          <button id="addSite" type="button" class="btn primary">Add</button>
+        </div>
+      </form>
+      <ul id="sitesList" style="list-style:none; padding-left:0; margin-top:10px;"></ul>
+    </div>
+
     <div class="row end">
       <button id="test" class="btn">Test API</button>
       <button id="save" class="btn primary">Save</button>

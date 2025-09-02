@@ -5,6 +5,7 @@ const els = {
   btnWrite: document.getElementById('btnWrite'),
   btnCopy: document.getElementById('btnCopy'),
   openOptions: document.getElementById('openOptions'),
+  openCustomWeb: document.getElementById('openCustomWeb'),
   history: document.getElementById('history'),
   ipInfoText: document.getElementById('ipInfoText'),
   btnCustomPrompt: document.getElementById('btnCustomPrompt'),
@@ -68,6 +69,14 @@ for (const id of Object.keys(btnMap)) {
 updateButtonVisibility();
 
 els.openOptions?.addEventListener('click', () => chrome.runtime.openOptionsPage());
+els.openCustomWeb?.addEventListener('click', () => {
+  chrome.windows.create({
+    url: chrome.runtime.getURL('custom_web.html'),
+    type: 'popup',
+    width: 1000,
+    height: 800
+  });
+});
 els.viewHistory?.addEventListener('click', () => {
   chrome.tabs.create({ url: chrome.runtime.getURL('history.html') });
 });
