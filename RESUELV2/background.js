@@ -9,24 +9,49 @@ const DEFAULTS = {
   ocrLang: 'eng',
 };
 
-chrome.runtime.onInstalled.addListener(async () => {
-  try {
-    const cur = await chrome.storage.local.get(Object.keys(DEFAULTS));
-    const toSet = {};
-    for (const [k, v] of Object.entries(DEFAULTS)) if (cur[k] === undefined) toSet[k] = v;
-    if (Object.keys(toSet).length) await chrome.storage.local.set(toSet);
-    
-    // Create context menu
-    await chrome.contextMenus.removeAll();
+async function updatePopup() {
+  const { loggedIn } = await chrome.storage.local.get('loggedIn');
+  const popup = loggedIn ? 'popup.html' : 'login.html';
+  await chrome.action.setPopup({ popup });
+}
+
+async function updateContextMenu() {
+  const { loggedIn } = await chrome.storage.local.get('loggedIn');
+  await chrome.contextMenus.removeAll();
+  if (loggedIn) {
     chrome.contextMenus.create({
       id: 'sendToResuelv',
       title: 'Send to Resuelv',
       contexts: ['selection'],
       documentUrlPatterns: ['<all_urls>']
     });
+  }
+}
+
+updatePopup();
+updateContextMenu();
+chrome.runtime.onStartup.addListener(() => {
+  updatePopup();
+  updateContextMenu();
+});
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes.loggedIn) {
+    updatePopup();
+    updateContextMenu();
+  }
+});
+
+chrome.runtime.onInstalled.addListener(async () => {
+  try {
+    const cur = await chrome.storage.local.get(Object.keys(DEFAULTS));
+    const toSet = {};
+    for (const [k, v] of Object.entries(DEFAULTS)) if (cur[k] === undefined) toSet[k] = v;
+    if (Object.keys(toSet).length) await chrome.storage.local.set(toSet);
   } catch (e) {
     console.error('Error initializing defaults:', e);
   }
+  updatePopup();
+  updateContextMenu();
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
@@ -112,6 +137,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           } else {
             sendResponse({ ok: false, error: 'Missing fields' });
           }
+          break;
+        }
+        case 'OPEN_CUSTOM_WEB': {
+          const openerTabId = message.openerTabId || sender?.tab?.id || (await getActiveTabId());
+          const { customWebSize = { width: 1000, height: 800 } } = await chrome.storage.local.get('customWebSize');
+          await chrome.windows.create({
+            url: chrome.runtime.getURL(`custom_web.html?tabId=${openerTabId}`),
+            type: 'popup',
+            width: customWebSize.width || 1000,
+            height: customWebSize.height || 800
+          });
+          sendResponse({ ok: true });
           break;
         }
         case 'GET_TAB_ID': {
