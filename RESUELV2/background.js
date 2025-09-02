@@ -9,6 +9,19 @@ const DEFAULTS = {
   ocrLang: 'eng',
 };
 
+async function updatePopup() {
+  const { loggedIn } = await chrome.storage.local.get('loggedIn');
+  const popup = loggedIn ? 'popup.html' : 'login.html';
+  await chrome.action.setPopup({ popup });
+}
+
+updatePopup();
+chrome.runtime.onStartup.addListener(updatePopup);
+chrome.runtime.onInstalled.addListener(updatePopup);
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes.loggedIn) updatePopup();
+});
+
 chrome.runtime.onInstalled.addListener(async () => {
   try {
     const cur = await chrome.storage.local.get(Object.keys(DEFAULTS));
@@ -112,6 +125,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           } else {
             sendResponse({ ok: false, error: 'Missing fields' });
           }
+          break;
+        }
+        case 'OPEN_CUSTOM_WEB': {
+          const openerTabId = message.openerTabId || sender?.tab?.id || (await getActiveTabId());
+          const { customWebSize = { width: 1000, height: 800 } } = await chrome.storage.local.get('customWebSize');
+          await chrome.windows.create({
+            url: chrome.runtime.getURL(`custom_web.html?tabId=${openerTabId}`),
+            type: 'popup',
+            width: customWebSize.width || 1000,
+            height: customWebSize.height || 800
+          });
+          sendResponse({ ok: true });
           break;
         }
         case 'GET_TAB_ID': {

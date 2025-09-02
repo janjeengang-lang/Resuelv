@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Login - Resuelv+</title>
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    body {
+      background: #181c20;
+      margin: 0;
+      padding: 20px;
+      font-family: Arial, sans-serif;
+      color: #fff;
+      width: 300px;
+    }
+    .login-container {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    input {
+      padding: 8px;
+      border: 1px solid #444;
+      border-radius: 4px;
+      background: #23272b;
+      color: #fff;
+    }
+    button {
+      padding: 8px;
+      background: #4ecdc4;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      color: #000;
+      font-weight: bold;
+    }
+    #loginError {
+      color: #f87171;
+      font-size: 0.9em;
+      min-height: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <input type="email" id="email" placeholder="Email" />
+    <input type="password" id="password" placeholder="Password" />
+    <button id="loginBtn">Login</button>
+    <div id="loginError"></div>
+  </div>
+  <script type="module" src="login.js"></script>
+</body>
+</html>
