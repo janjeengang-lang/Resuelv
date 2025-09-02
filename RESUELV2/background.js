@@ -114,6 +114,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
           break;
         }
+        case 'OPEN_CUSTOM_WEB': {
+          const openerTabId = message.openerTabId || sender?.tab?.id || (await getActiveTabId());
+          const { customWebSize = { width: 1000, height: 800 } } = await chrome.storage.local.get('customWebSize');
+          await chrome.windows.create({
+            url: chrome.runtime.getURL(`custom_web.html?tabId=${openerTabId}`),
+            type: 'popup',
+            width: customWebSize.width || 1000,
+            height: customWebSize.height || 800
+          });
+          sendResponse({ ok: true });
+          break;
+        }
         case 'GET_TAB_ID': {
           const id = sender?.tab?.id || (await getActiveTabId());
           sendResponse({ ok: true, tabId: id });
