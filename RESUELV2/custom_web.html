@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Custom Sites</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    body { margin:0; display:flex; flex-direction:column; height:100vh; background:#181c20; }
+    #controls { display:flex; align-items:center; gap:8px; background:#23272b; padding:8px; }
+    #siteSelect { flex:1; }
+    #container { flex:1; position:relative; }
+    #container iframe { position:absolute; top:0; left:0; width:100%; height:100%; border:none; }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <select id="siteSelect"></select>
+    <button id="toggleSelect">Hide</button>
+  </div>
+  <div id="container"></div>
+  <script src="custom_web.js"></script>
+</body>
+</html>

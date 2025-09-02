@@ -383,7 +383,7 @@
         showFakeInfoModal();
         break;
       case 'temp-mail':
-        showTempMailModal();
+        window.open('https://yopmail.com/', '_blank');
         break;
     }
   }
@@ -490,107 +490,6 @@
     }
 
     modal.querySelector('#fiGenerate').addEventListener('click', () => generate(false));
-  }
-
-  async function showTempMailModal() {
-    const API_URL = 'https://www.1secmail.com/api/v1';
-    let currentMailbox = null;
-    let refreshTimer = null;
-    const seen = new Set();
-    const modal = createStyledModal('Temporary Email', `
-      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
-        <button id="tmCreate" style="background:linear-gradient(45deg,#4ecdc4,#44a08d); border:none; color:#fff; padding:6px 12px; border-radius:6px; cursor:pointer;">Create</button>
-        <input id="tmEmail" type="text" readonly style="flex:1; padding:6px; border-radius:6px; background:#0b1220; color:#e2e8f0; border:1px solid #334155;" />
-        <button id="tmCopy" style="background:#22c55e;border:none;color:#fff;padding:6px 12px;border-radius:6px;cursor:pointer;">Copy</button>
-      </div>
-      <div style="display:flex; gap:10px; margin-bottom:10px;">
-        <button id="tmRefresh" style="background:linear-gradient(45deg,#ff9ff3,#feca57); border:none; color:#fff; padding:6px 12px; border-radius:6px; cursor:pointer;">Refresh Inbox</button>
-        <button id="tmDelete" style="background:#dc2626;border:none;color:#fff;padding:6px 12px;border-radius:6px;cursor:pointer;">Delete</button>
-      </div>
-      <div id="tmStatus" style="color:#e2e8f0;margin-bottom:10px;"></div>
-      <div id="tmMessages" style="max-height:200px; overflow-y:auto;"></div>
-    `);
-
-    const emailEl = modal.querySelector('#tmEmail');
-    const statusEl = modal.querySelector('#tmStatus');
-    const listEl = modal.querySelector('#tmMessages');
-
-    function setStatus(msg, err=false){
-      if (statusEl) { statusEl.textContent = msg; statusEl.style.color = err ? '#f87171' : '#e2e8f0'; }
-    }
-    function clearMailbox(){
-      currentMailbox = null;
-      emailEl.value = '';
-      listEl.innerHTML = '';
-      if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
-    }
-    async function generateTempEmail(){
-      setStatus('Generating...');
-      try{
-        const res = await fetch(`${API_URL}/?action=genRandomMailbox&count=1`);
-        if(!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        const email = Array.isArray(data) ? data[0] : null;
-        if(email){
-          const [login, domain] = email.split('@');
-          currentMailbox = {login, domain};
-          emailEl.value = email;
-          setStatus('Email generated');
-          seen.clear();
-          await checkInbox();
-          if(refreshTimer) clearInterval(refreshTimer);
-          refreshTimer = setInterval(checkInbox, 60000);
-        }else throw new Error('Invalid response');
-      }catch(e){
-        setStatus('Error: '+e.message, true);
-      }
-    }
-    async function checkInbox(){
-      if(!currentMailbox){ setStatus('No email generated'); return; }
-      try{
-        const {login, domain} = currentMailbox;
-        const res = await fetch(`${API_URL}/?action=getMessages&login=${login}&domain=${domain}`);
-        if(!res.ok) throw new Error(`HTTP ${res.status}`);
-        const msgs = await res.json();
-        renderMessages(msgs);
-        for(const m of msgs){
-          if(!seen.has(m.id)){
-            seen.add(m.id);
-            chrome.runtime.sendMessage({ type: 'SHOW_NOTIFICATION', title: m.from || 'Temp Mail', message: m.subject || '' });
-          }
-        }
-        setStatus(`Found ${msgs.length} message(s).`);
-      }catch(e){
-        setStatus('Error: '+e.message, true);
-      }
-    }
-    function renderMessages(msgs){
-      if(!msgs.length){ listEl.textContent = 'No messages'; return; }
-      listEl.innerHTML = msgs.map(m=>`<div class="tm-msg" data-id="${m.id}" style="padding:6px; border-bottom:1px solid #334155; cursor:pointer;">
-        <div><strong>${m.from || 'Unknown'}</strong></div>
-        <div>${m.subject || ''}</div>
-        <div style=\"font-size:12px; color:#94a3b8;\">${m.date || ''}</div>
-      </div>`).join('');
-      listEl.querySelectorAll('.tm-msg').forEach(div=>div.addEventListener('click',async()=>{
-        const id = div.getAttribute('data-id');
-        try{
-          const {login, domain} = currentMailbox;
-          const res = await fetch(`${API_URL}/?action=readMessage&login=${login}&domain=${domain}&id=${id}`);
-          if(!res.ok) throw new Error(`HTTP ${res.status}`);
-          const msg = await res.json();
-          const body = msg.textBody || msg.body || msg.htmlBody || '';
-          createStyledModal('Mail from '+(msg.from||''), `<div style="max-height:300px;overflow:auto;white-space:pre-wrap;color:#e2e8f0;">${body}</div>
-            <div style="text-align:center;margin-top:10px;"><a href="data:text/plain;charset=utf-8,${encodeURIComponent(body)}" download="mail.txt" style="color:#22c55e;">Download</a></div>`);
-        }catch(err){
-          setStatus('Error: '+err.message, true);
-        }
-      }));
-    }
-
-    modal.querySelector('#tmCreate').addEventListener('click', generateTempEmail);
-    modal.querySelector('#tmRefresh').addEventListener('click', checkInbox);
-    modal.querySelector('#tmCopy').addEventListener('click', ()=>{ if(emailEl.value){ navigator.clipboard.writeText(emailEl.value); showNotification('Email copied'); }});
-    modal.querySelector('#tmDelete').addEventListener('click', ()=>{ clearMailbox(); setStatus('Mailbox cleared'); });
   }
 
   function showLastAnswerModal(answer) {
