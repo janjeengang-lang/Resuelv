@@ -45,6 +45,18 @@
             margin-top: 0px;
         }
 
+        .user-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 8px 0;
+            font-size: 0.85rem;
+            color: var(--muted);
+        }
+        .user-left { display: flex; align-items: center; gap: 6px; }
+        #sessionTimer { color: #ffd600; font-weight: 600; }
+        .btn.logout { background: #dc2626; border-color: #dc2626; color: #fff; padding: 4px 8px; font-size: 12px; }
+
         .nav-btn {
             background: linear-gradient(120deg, #2b232a 60%, #4d1455be 100%);
             border: none;
@@ -345,7 +357,16 @@
         <!-- Header -->
         <div class="header">
             <div class="title">Resuelv+</div>
-            <a class="link" id="openOptions">Options</a>
+            <div>
+                <a class="link" id="openCustomWeb" style="margin-right:10px;">Custom Web</a>
+                <a class="link" id="openOptions">Options</a>
+            </div>
+        </div>
+
+        <!-- User Info -->
+        <div id="userBar" class="user-bar">
+            <div class="user-left"><span id="userEmail"></span><button id="logoutBtn" class="btn logout">Logout</button></div>
+            <div id="sessionTimer">00:00:00</div>
         </div>
 
         <!-- Main Action Buttons with Navigation -->

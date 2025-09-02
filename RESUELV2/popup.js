@@ -1,16 +1,57 @@
 // popup.js
+
 const els = {
   status: document.getElementById('status'),
   preview: document.getElementById('preview'),
   btnWrite: document.getElementById('btnWrite'),
   btnCopy: document.getElementById('btnCopy'),
   openOptions: document.getElementById('openOptions'),
+  openCustomWeb: document.getElementById('openCustomWeb'),
   history: document.getElementById('history'),
   ipInfoText: document.getElementById('ipInfoText'),
   btnCustomPrompt: document.getElementById('btnCustomPrompt'),
   btnUseLastPrompt: document.getElementById('btnUseLastPrompt'),
   viewHistory: document.getElementById('viewHistory'),
+  userEmail: document.getElementById('userEmail'),
+  sessionTimer: document.getElementById('sessionTimer'),
+  logoutBtn: document.getElementById('logoutBtn'),
 };
+
+(async function initSession(){
+  const { loggedIn, userEmail, loginTime } = await chrome.storage.local.get(['loggedIn','userEmail','loginTime']);
+  if (!loggedIn) { window.location.href = 'login.html'; return; }
+  const res = await chrome.runtime.sendMessage({ type: 'CHECK_AUTH' });
+  if (!res?.ok) { window.location.href = 'login.html'; return; }
+  els.userEmail.textContent = userEmail || '';
+  startCountdown(loginTime);
+})();
+
+function startCountdown(loginTime){
+  if(!loginTime) return;
+  const end = loginTime + 3*60*60*1000;
+  const tick = async () => {
+    const diff = end - Date.now();
+    if(diff <= 0){
+      els.sessionTimer.textContent = '00:00:00';
+      await chrome.runtime.sendMessage({ type:'LOGOUT', reason:'Session expired' });
+      window.location.href = 'login.html';
+      return;
+    }
+    const h = Math.floor(diff/3600000);
+    const m = Math.floor((diff%3600000)/60000);
+    const s = Math.floor((diff%60000)/1000);
+    els.sessionTimer.textContent = `${pad(h)}:${pad(m)}:${pad(s)}`;
+    setTimeout(tick,1000);
+  };
+  tick();
+}
+
+function pad(n){ return String(n).padStart(2,'0'); }
+
+els.logoutBtn?.addEventListener('click', async () => {
+  await chrome.runtime.sendMessage({ type:'LOGOUT', reason:'Logged out' });
+  window.location.href = 'login.html';
+});
 
 const btnMap = {
   btnOpen: 'open',
@@ -68,6 +109,10 @@ for (const id of Object.keys(btnMap)) {
 updateButtonVisibility();
 
 els.openOptions?.addEventListener('click', () => chrome.runtime.openOptionsPage());
+els.openCustomWeb?.addEventListener('click', async () => {
+  const [tab] = await chrome.tabs.query({active:true,currentWindow:true});
+  await chrome.runtime.sendMessage({ type:'OPEN_CUSTOM_WEB', openerTabId: tab.id });
+});
 els.viewHistory?.addEventListener('click', () => {
   chrome.tabs.create({ url: chrome.runtime.getURL('history.html') });
 });

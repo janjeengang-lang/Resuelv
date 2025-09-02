@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Login - Resuelv+</title>
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    body {
+      margin: 0;
+      width: 320px;
+      height: 400px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: 'Segoe UI', Tahoma, sans-serif;
+    }
+    .box {
+      position: relative;
+      width: 100%;
+      max-width: 280px;
+      padding: 40px 30px;
+      background: var(--card);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .box::before {
+      content: '';
+      position: absolute;
+      inset: -2px;
+      border-radius: inherit;
+      background: linear-gradient(45deg,#ff6b6b,#4ecdc4,#45b7d1,#96ceb4,#feca57,#ff9ff3,#54a0ff);
+      background-size: 400% 400%;
+      animation: borderGlow 6s linear infinite;
+      z-index: -2;
+    }
+    .box::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      padding: 2px;
+      background: conic-gradient(from 0deg,#22c55e,#3b82f6,#a855f7,#22c55e);
+      filter: blur(10px);
+      animation: spin 4s linear infinite;
+      z-index: -1;
+      pointer-events: none;
+    }
+    @keyframes borderGlow {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    h1 {
+      margin: 0 0 20px;
+      text-align: center;
+      color: var(--accent);
+      font-size: 1.4rem;
+      text-shadow: 0 0 6px var(--accent), 0 0 12px var(--accent);
+      animation: glow 2s ease-in-out infinite alternate;
+    }
+    @keyframes glow {
+      from { text-shadow: 0 0 6px var(--accent), 0 0 12px var(--accent); }
+      to { text-shadow: 0 0 12px var(--accent), 0 0 24px var(--accent); }
+    }
+    input {
+      width: 100%;
+      margin: 8px 0;
+      padding: 10px;
+      border-radius: 6px;
+      border: 1px solid #334155;
+      background: #0b1220;
+      color: var(--fg);
+    }
+    button {
+      width: 100%;
+      margin-top: 10px;
+      padding: 10px;
+      border: none;
+      border-radius: 6px;
+      background: var(--accent);
+      color: #0b1215;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover { filter: brightness(1.1); }
+    #loginError {
+      margin-top: 12px;
+      text-align: center;
+      min-height: 20px;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>Resuelv+</h1>
+    <input type="email" id="email" placeholder="Email" />
+    <input type="password" id="password" placeholder="Password" />
+    <button id="loginBtn">Login</button>
+    <div id="loginError"></div>
+  </div>
+  <script src="login.js"></script>
+</body>
+</html>
