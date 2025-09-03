@@ -1,24 +1,25 @@
 {
   "manifest_version": 3,
-  "name": "Resuelv+",
+  "name": "Zepra",
   "version": "2.0.0",
   "description": "Survey helper: LLM answers, OCR, and IP info.",
   "action": {
-    "default_popup": "popup.html",
+    "default_popup": "login.html",
+    "default_title": "Zepra",
     "default_icon": {
-      "16": "icons/icon16.png",
-      "32": "icons/icon32.png",
-      "48": "icons/icon48.png",
-      "128": "icons/icon128.png"
+      "16": "icons/zepra.svg",
+      "32": "icons/zepra.svg",
+      "48": "icons/zepra.svg",
+      "128": "icons/zepra.svg"
     }
   },
   "icons": {
-    "16": "icons/icon16.png",
-    "32": "icons/icon32.png",
-    "48": "icons/icon48.png",
-    "64": "icons/icon64.png",
-    "128": "icons/icon128.png",
-    "256": "icons/icon256.png"
+    "16": "icons/zepra.svg",
+    "32": "icons/zepra.svg",
+    "48": "icons/zepra.svg",
+    "64": "icons/zepra.svg",
+    "128": "icons/zepra.svg",
+    "256": "icons/zepra.svg"
   },
   "options_ui": {
     "page": "options.html",
@@ -30,7 +31,9 @@
     "scripting",
     "tabs",
     "contextMenus",
-    "notifications"
+    "notifications",
+    "clipboardRead",
+    "clipboardWrite"
   ],
   "web_accessible_resources": [{
     "resources": ["icons/*"],
@@ -44,9 +47,14 @@
     "https://generativelanguage.googleapis.com/*",
     "https://api.cerebras.ai/*",
     "https://api.ipdata.co/*",
-    "https://www.1secmail.com/*",
-    "https://randomuser.me/*"
+    "https://api.mail.tm/*",
+    "https://randomuser.me/*",
+    "https://identitytoolkit.googleapis.com/*",
+    "https://securetoken.googleapis.com/*"
   ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
   "background": {
     "service_worker": "background.js"
   },

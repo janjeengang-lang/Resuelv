@@ -3,35 +3,33 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Resuelv+ Options</title>
+    <title>Zepra Options</title>
     <link rel="stylesheet" href="styles.css" />
     <style>
       body {
         font-family: Arial, sans-serif;
         margin: 0;
         padding: 20px;
-        background: #181c20;
+        background: #000;
         color: #e2e8f0;
       }
 
       .page {
-        background: #23272b;
+        background: var(--card);
         border-radius: 12px;
-        box-shadow: 0 2px 16px rgba(230, 197, 157, 0.45);
+        box-shadow: 0 0 20px rgba(57,255,20,0.3), 0 0 20px rgba(255,230,0,0.3);
         padding: 22px 18px 16px 18px;
         min-width: 400px;
         max-width: 600px;
         margin: 0 auto;
-        border: 2px solid #64077d;
+        border: 2px solid var(--accent);
       }
 
       h2 {
         text-align: center;
-        color: #ff9800;
         font-size: 1.8rem;
         font-weight: bold;
         margin-bottom: 24px;
-        text-shadow: 0 2px 8px #181c20cc;
       }
 
       .group {
@@ -45,10 +43,10 @@
 
       .subtitle {
         font-size: 1.2em;
-        color: #ffd600;
+        color: var(--accent2);
         font-weight: bold;
         margin-bottom: 16px;
-        text-shadow: 0 1px 2px #181c20cc;
+        text-shadow: 0 1px 2px #000;
       }
 
       label.row {
@@ -182,7 +180,7 @@
     </style>
   </head>
   <body class="page">
-    <h2>Options</h2>
+    <h2 class="zepra-gradient">Zepra Options</h2>
 
     <div class="group">
       <div class="subtitle">API Keys</div>
@@ -280,6 +278,36 @@
         <thead><tr><th>Name</th><th>Tags</th><th>Hotkey</th><th>Actions</th></tr></thead>
         <tbody></tbody>
       </table>
+    </div>
+
+    <div class="group">
+      <div class="subtitle">Custom Sites</div>
+      <form id="siteForm">
+        <label class="row">
+          <span>Name</span>
+          <input id="siteName" type="text" />
+        </label>
+        <label class="row">
+          <span>URL</span>
+          <input id="siteUrl" type="url" placeholder="https://example.com/" />
+        </label>
+        <div class="row end">
+          <button id="addSite" type="button" class="btn primary">Add</button>
+        </div>
+      </form>
+      <ul id="sitesList" style="list-style:none; padding-left:0; margin-top:10px;"></ul>
+    </div>
+
+    <div class="group">
+      <div class="subtitle">Custom Window Size</div>
+      <label class="row">
+        <span>Width</span>
+        <input id="webWidth" type="number" min="400" />
+      </label>
+      <label class="row">
+        <span>Height</span>
+        <input id="webHeight" type="number" min="300" />
+      </label>
     </div>
 
     <div class="row end">

@@ -5,7 +5,9 @@
 // - Type text into focused field (no humanize; speed only)
 // - Floating bubble with rainbow modal
 
-(() => {
+function init() {
+  if (window.zepraInit) return;
+  window.zepraInit = true;
   const STATE = {
     overlay: null,
     rectEl: null,
@@ -46,10 +48,10 @@
     if (STATE.bubble) return;
     
     const bubble = document.createElement('div');
-    bubble.id = 'resuelv-bubble';
+    bubble.id = 'zepra-bubble';
     bubble.innerHTML = `
       <div class="bubble-icon">
-        <img src="${chrome.runtime.getURL('icons/icon48.png')}" alt="Resuelv" />
+        <img src="${chrome.runtime.getURL('icons/zepra.svg')}" alt="Zepra" />
         <div class="bubble-glow"></div>
       </div>
     `;
@@ -61,14 +63,14 @@
       z-index: 2147483647;
       cursor: grab;
       border-radius: 50%;
-      background: linear-gradient(45deg, #ff6b6b, #4ecdc4, #45b7d1, #96ceb4, #feca57, #ff9ff3, #54a0ff);
-      background-size: 400% 400%;
-      animation: bubbleFloat 3s ease-in-out infinite, rainbowGlow 2s linear infinite;
-      box-shadow: 0 4px 20px rgba(255, 107, 107, 0.4);
+      background: #000;
+      box-shadow: 0 0 10px #39ff14, 0 0 20px #ffe600;
       display: flex;
       align-items: center;
       justify-content: center;
       transition: transform 0.3s ease;
+      border: 2px solid #39ff14;
+      animation: bubbleFloat 3s ease-in-out infinite;
     `;
 
     const style = document.createElement('style');
@@ -78,15 +80,9 @@
         50% { transform: translateY(-10px) scale(1.05); }
       }
       
-      @keyframes rainbowGlow {
-        0% { background-position: 0% 50%; }
-        50% { background-position: 100% 50%; }
-        100% { background-position: 0% 50%; }
-      }
-      
-      #resuelv-bubble:hover {
+      #zepra-bubble:hover {
         transform: scale(1.1) !important;
-        box-shadow: 0 6px 30px rgba(255, 107, 107, 0.6) !important;
+        box-shadow: 0 6px 30px rgba(57,255,20,0.6), 0 0 20px rgba(255,230,0,0.5) !important;
       }
       
       .bubble-icon {
@@ -111,7 +107,7 @@
         right: -5px;
         bottom: -5px;
         border-radius: 50%;
-        background: radial-gradient(circle, rgba(255,255,255,0.3) 0%, transparent 70%);
+        background: radial-gradient(circle, rgba(57,255,20,0.4) 0%, rgba(255,230,0,0.2) 40%, transparent 70%);
         animation: pulse 2s ease-in-out infinite;
       }
       
@@ -177,14 +173,14 @@
   }
 
   function showBubbleMenu() {
-    if (document.getElementById('resuelv-bubble-menu')) return;
+    if (document.getElementById('zepra-bubble-menu')) return;
     
     const menu = document.createElement('div');
-    menu.id = 'resuelv-bubble-menu';
+    menu.id = 'zepra-bubble-menu';
     menu.innerHTML = `
       <div class="bubble-menu-content">
         <div class="menu-header">
-          <h3>Resuelv+ Menu</h3>
+          <h3 class="zepra-gradient">Zepra Menu</h3>
           <button class="close-btn">&times;</button>
         </div>
         <div class="menu-items">
@@ -216,6 +212,18 @@
             <span class="menu-icon">📧</span>
             <span class="menu-text">Temp Mail</span>
           </div>
+          <div class="menu-item" data-action="custom-web">
+            <span class="menu-icon">🌐</span>
+            <span class="menu-text">Custom Web</span>
+          </div>
+          <div class="menu-item" data-action="ai-humanizer">
+            <span class="menu-icon">🧠</span>
+            <span class="menu-text">AI Humanizer</span>
+          </div>
+          <div class="menu-item" data-action="real-address">
+            <span class="menu-icon">🏠</span>
+            <span class="menu-text">Generate Real Address</span>
+          </div>
         </div>
       </div>
     `;
@@ -225,12 +233,12 @@
       top: 90px;
       right: 20px;
       width: 250px;
-      background: linear-gradient(135deg, #23272b 0%, #120f12 100%);
+      background: #000;
       border-radius: 15px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+      box-shadow: 0 0 20px rgba(57,255,20,0.3), 0 0 20px rgba(255,230,0,0.3);
       z-index: 2147483648;
       animation: slideIn 0.3s ease-out;
-      border: 2px solid #64077d;
+      border: 2px solid #39ff14;
     `;
 
     const menuStyle = document.createElement('style');
@@ -258,7 +266,7 @@
         margin: 0;
         font-size: 16px;
         font-weight: bold;
-        color: #ff9800;
+        color: #39ff14;
       }
       
       .close-btn {
@@ -284,33 +292,33 @@
       .menu-items {
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        gap: 6px;
       }
-      
+
       .menu-item {
         display: flex;
         align-items: center;
-        gap: 12px;
-        padding: 10px;
+        gap: 10px;
+        padding: 8px;
         border-radius: 8px;
         cursor: pointer;
         transition: all 0.2s;
-        background: linear-gradient(120deg, #2b232a 60%, #4d1455be 100%);
+        background: linear-gradient(120deg, #000 60%, #39ff1480 100%);
       }
       
       .menu-item:hover {
-        background: linear-gradient(120deg, #691b93f7 60%, #9305b7 100%);
+        background: linear-gradient(120deg, #39ff1499 60%, #ffe600 100%);
         transform: translateX(5px);
       }
       
       .menu-icon {
-        font-size: 18px;
+        font-size: 16px;
         width: 20px;
         text-align: center;
       }
-      
+
       .menu-text {
-        font-size: 14px;
+        font-size: 13px;
         font-weight: 500;
         color: #ffd600;
       }
@@ -383,9 +391,22 @@
         showFakeInfoModal();
         break;
       case 'temp-mail':
-        showTempMailModal();
+        window.open('https://yopmail.com/', '_blank');
+        break;
+      case 'custom-web':
+        await chrome.runtime.sendMessage({ type: 'OPEN_CUSTOM_WEB' });
+        break;
+      case 'ai-humanizer':
+        await openAIHumanizer();
+        break;
+      case 'real-address':
+        showRealAddressModal();
         break;
     }
+  }
+
+  async function openAIHumanizer(){
+    await chrome.runtime.sendMessage({ type:'OPEN_OR_FOCUS_CUSTOM_WEB', url:'https://bypassai.writecream.com/' });
   }
 
   function showIPModal(info) {
@@ -399,7 +420,7 @@
     const modal = createStyledModal('IP Information', `
       <div style="background: linear-gradient(120deg, #120f12 80%, #0a0f17 100%); padding: 20px; border-radius: 10px; margin: 10px 0;">
         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
-          <strong style="color: #ff9800;">IP Address:</strong>
+          <strong style="color: #39ff14;">IP Address:</strong>
           <span style="color: #e2e8f0; font-family: monospace;">${ip || 'Unknown'}</span>
           <button onclick="navigator.clipboard.writeText('${ip || ''}')" style="background: #22c55e; border: none; color: white; padding: 5px 10px; border-radius: 5px; cursor: pointer; font-size: 12px;">Copy</button>
         </div>
@@ -413,7 +434,10 @@
   async function showFakeInfoModal() {
     const COUNTRY_CODES = "AF AX AL DZ AS AD AO AI AQ AR AM AW AU AT AZ BS BH BD BB BY BE BZ BJ BM BT BO BQ BA BW BV BR IO BN BG BF BI KH CM CA CV KY CF TD CL CN CX CC CO KM CG CD CK CR CI HR CU CW CY CZ DK DJ DM DO EC EG SV GQ ER EE ET FK FO FJ FI FR GF PF TF GA GM GE DE GH GI GR GL GD GP GU GT GG GN GW GY HT HM VA HN HK HU IS IN ID IR IQ IE IM IL IT JM JP JE JO KZ KE KI KP KR KW KG LA LV LB LS LR LY LI LT LU MO MK MG MW MY MV ML MT MH MQ MR MU YT MX FM MD MC MN ME MS MA MZ MM NA NR NP NL NC NZ NI NE NG NU NF MP NO OM PK PW PS PA PG PY PE PH PN PL PT PR QA RE RO RU RW BL SH KN LC MF PM VC WS SM ST SA SN RS SC SL SG SX SK SI SB SO ZA GS SS ES LK SD SR SJ SE CH SY TW TJ TZ TH TL TG TK TO TT TN TR TM TC TV UG UA AE GB US UM UY UZ VU VE VN VG VI WF EH YE ZM ZW".split(' ');
     const datalist = `<datalist id="fiNatList">${COUNTRY_CODES.map(c=>`<option value="${c}">`).join('')}</datalist>`;
-    const content = `
+    const { fakeInfo } = await chrome.storage.local.get('fakeInfo');
+    const content = fakeInfo ? `
+      <div id="fiResult"></div>
+    ` : `
       <div style="margin-bottom:15px; display:flex; gap:10px; flex-wrap:wrap;">
         <select id="fiGender" style="flex:1; padding:6px; border-radius:6px; background:#0b1220; color:#e2e8f0; border:1px solid #334155;">
           <option value="">Any Gender</option>
@@ -428,12 +452,13 @@
     `;
     const modal = createStyledModal('Fake User Info', content);
 
-    async function generate(force=false){
+    async function generate(){
       try {
         const gender = modal.querySelector('#fiGender').value;
         const nat = modal.querySelector('#fiNat').value.trim();
-        const resp = await chrome.runtime.sendMessage({ type:'GENERATE_FAKE_INFO', gender, nat, force });
+        const resp = await chrome.runtime.sendMessage({ type:'GENERATE_FAKE_INFO', gender, nat });
         if (!resp?.ok) throw new Error(resp?.error || 'Failed');
+        await chrome.storage.local.set({ fakeInfo: resp.data });
         render(resp.data);
       } catch(e){
         showNotification('Failed to generate: '+e.message);
@@ -481,116 +506,96 @@
         btn.addEventListener('click',()=>{
           const idx = btn.getAttribute('data-write');
           const text = fields[idx].value || '';
-          const m = document.getElementById('resuelv-styled-modal');
+          const m = document.getElementById('zepra-styled-modal');
           if (m) m.remove();
           typeAnswer(text);
         });
       });
-      fi.querySelector('#fiRegenerate')?.addEventListener('click',()=>generate(true));
+      fi.querySelector('#fiRegenerate')?.addEventListener('click', async ()=>{
+        await chrome.storage.local.remove('fakeInfo');
+        modal.remove();
+        showFakeInfoModal();
+      });
     }
 
-    modal.querySelector('#fiGenerate').addEventListener('click', () => generate(false));
+    if(fakeInfo){
+      render(fakeInfo);
+    } else {
+      modal.querySelector('#fiGenerate')?.addEventListener('click', generate);
+    }
   }
 
-  async function showTempMailModal() {
-    const API_URL = 'https://www.1secmail.com/api/v1';
-    let currentMailbox = null;
-    let refreshTimer = null;
-    const seen = new Set();
-    const modal = createStyledModal('Temporary Email', `
-      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
-        <button id="tmCreate" style="background:linear-gradient(45deg,#4ecdc4,#44a08d); border:none; color:#fff; padding:6px 12px; border-radius:6px; cursor:pointer;">Create</button>
-        <input id="tmEmail" type="text" readonly style="flex:1; padding:6px; border-radius:6px; background:#0b1220; color:#e2e8f0; border:1px solid #334155;" />
-        <button id="tmCopy" style="background:#22c55e;border:none;color:#fff;padding:6px 12px;border-radius:6px;cursor:pointer;">Copy</button>
+  async function showRealAddressModal(){
+    const content = `
+      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:15px;">
+        <input id="raCountry" placeholder="Country" style="padding:6px;border-radius:6px;background:#0b1220;color:#e2e8f0;border:1px solid #334155;"/>
+        <input id="raState" placeholder="State/Province" style="padding:6px;border-radius:6px;background:#0b1220;color:#e2e8f0;border:1px solid #334155;"/>
+        <input id="raCity" placeholder="City/Zip Code" style="padding:6px;border-radius:6px;background:#0b1220;color:#e2e8f0;border:1px solid #334155;"/>
+        <button id="raGenerate" style="background:linear-gradient(45deg,#4ecdc4,#44a08d);border:none;color:#fff;padding:6px 12px;border-radius:6px;cursor:pointer;">Generate</button>
       </div>
-      <div style="display:flex; gap:10px; margin-bottom:10px;">
-        <button id="tmRefresh" style="background:linear-gradient(45deg,#ff9ff3,#feca57); border:none; color:#fff; padding:6px 12px; border-radius:6px; cursor:pointer;">Refresh Inbox</button>
-        <button id="tmDelete" style="background:#dc2626;border:none;color:#fff;padding:6px 12px;border-radius:6px;cursor:pointer;">Delete</button>
-      </div>
-      <div id="tmStatus" style="color:#e2e8f0;margin-bottom:10px;"></div>
-      <div id="tmMessages" style="max-height:200px; overflow-y:auto;"></div>
-    `);
+      <div id="raResult" style="display:none;"></div>
+    `;
+    const modal = createStyledModal('Generate Real Address', content);
 
-    const emailEl = modal.querySelector('#tmEmail');
-    const statusEl = modal.querySelector('#tmStatus');
-    const listEl = modal.querySelector('#tmMessages');
-
-    function setStatus(msg, err=false){
-      if (statusEl) { statusEl.textContent = msg; statusEl.style.color = err ? '#f87171' : '#e2e8f0'; }
-    }
-    function clearMailbox(){
-      currentMailbox = null;
-      emailEl.value = '';
-      listEl.innerHTML = '';
-      if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
-    }
-    async function generateTempEmail(){
-      setStatus('Generating...');
-      try{
-        const res = await fetch(`${API_URL}/?action=genRandomMailbox&count=1`);
-        if(!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        const email = Array.isArray(data) ? data[0] : null;
-        if(email){
-          const [login, domain] = email.split('@');
-          currentMailbox = {login, domain};
-          emailEl.value = email;
-          setStatus('Email generated');
-          seen.clear();
-          await checkInbox();
-          if(refreshTimer) clearInterval(refreshTimer);
-          refreshTimer = setInterval(checkInbox, 60000);
-        }else throw new Error('Invalid response');
-      }catch(e){
-        setStatus('Error: '+e.message, true);
+    function parse(text){
+      try {
+        const obj = JSON.parse(text);
+        return {
+          a1: obj.address_1 || '',
+          a2: obj.address_2 || '',
+          zip: obj.zip_code || ''
+        };
+      } catch (e) {
+        return { a1: '', a2: '', zip: '' };
       }
     }
-    async function checkInbox(){
-      if(!currentMailbox){ setStatus('No email generated'); return; }
-      try{
-        const {login, domain} = currentMailbox;
-        const res = await fetch(`${API_URL}/?action=getMessages&login=${login}&domain=${domain}`);
-        if(!res.ok) throw new Error(`HTTP ${res.status}`);
-        const msgs = await res.json();
-        renderMessages(msgs);
-        for(const m of msgs){
-          if(!seen.has(m.id)){
-            seen.add(m.id);
-            chrome.runtime.sendMessage({ type: 'SHOW_NOTIFICATION', title: m.from || 'Temp Mail', message: m.subject || '' });
-          }
-        }
-        setStatus(`Found ${msgs.length} message(s).`);
-      }catch(e){
-        setStatus('Error: '+e.message, true);
-      }
-    }
-    function renderMessages(msgs){
-      if(!msgs.length){ listEl.textContent = 'No messages'; return; }
-      listEl.innerHTML = msgs.map(m=>`<div class="tm-msg" data-id="${m.id}" style="padding:6px; border-bottom:1px solid #334155; cursor:pointer;">
-        <div><strong>${m.from || 'Unknown'}</strong></div>
-        <div>${m.subject || ''}</div>
-        <div style=\"font-size:12px; color:#94a3b8;\">${m.date || ''}</div>
-      </div>`).join('');
-      listEl.querySelectorAll('.tm-msg').forEach(div=>div.addEventListener('click',async()=>{
-        const id = div.getAttribute('data-id');
-        try{
-          const {login, domain} = currentMailbox;
-          const res = await fetch(`${API_URL}/?action=readMessage&login=${login}&domain=${domain}&id=${id}`);
-          if(!res.ok) throw new Error(`HTTP ${res.status}`);
-          const msg = await res.json();
-          const body = msg.textBody || msg.body || msg.htmlBody || '';
-          createStyledModal('Mail from '+(msg.from||''), `<div style="max-height:300px;overflow:auto;white-space:pre-wrap;color:#e2e8f0;">${body}</div>
-            <div style="text-align:center;margin-top:10px;"><a href="data:text/plain;charset=utf-8,${encodeURIComponent(body)}" download="mail.txt" style="color:#22c55e;">Download</a></div>`);
-        }catch(err){
-          setStatus('Error: '+err.message, true);
-        }
-      }));
+
+    function render(parts){
+      const fields=[
+        {label:'Address 1', value:parts.a1},
+        {label:'Address 2', value:parts.a2},
+        {label:'Zip Code', value:parts.zip}
+      ];
+      const box = modal.querySelector('#raResult');
+      box.innerHTML = fields.map((f,i)=>`
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;background:rgba(255,255,255,0.1);padding:8px;border-radius:6px;">
+          <strong style="color:#39ff14;min-width:90px;">${f.label}:</strong>
+          <span style="flex:1;color:#e2e8f0;">${f.value || ''}</span>
+          <button data-copy="${i}" style="background:#22c55e;border:none;color:#fff;padding:4px 8px;border-radius:5px;cursor:pointer;font-size:12px;">Copy</button>
+          <button data-write="${i}" style="background:#ff6b6b;border:none;color:#fff;padding:4px 8px;border-radius:5px;cursor:pointer;font-size:12px;">Write Here</button>
+        </div>
+      `).join('');
+      box.style.display='block';
+      box.querySelectorAll('[data-copy]').forEach(btn=>{
+        btn.addEventListener('click',()=>{
+          const idx=btn.getAttribute('data-copy');
+          navigator.clipboard.writeText(fields[idx].value||'');
+          showNotification('Copied to clipboard');
+        });
+      });
+      box.querySelectorAll('[data-write]').forEach(btn=>{
+        btn.addEventListener('click',()=>{
+          const idx=btn.getAttribute('data-write');
+          const text=fields[idx].value||'';
+          const m=document.getElementById('zepra-styled-modal');
+          if(m) m.remove();
+          typeAnswer(text);
+        });
+      });
     }
 
-    modal.querySelector('#tmCreate').addEventListener('click', generateTempEmail);
-    modal.querySelector('#tmRefresh').addEventListener('click', checkInbox);
-    modal.querySelector('#tmCopy').addEventListener('click', ()=>{ if(emailEl.value){ navigator.clipboard.writeText(emailEl.value); showNotification('Email copied'); }});
-    modal.querySelector('#tmDelete').addEventListener('click', ()=>{ clearMailbox(); setStatus('Mailbox cleared'); });
+    modal.querySelector('#raGenerate').addEventListener('click', async ()=>{
+      const country=modal.querySelector('#raCountry').value.trim();
+      const state=modal.querySelector('#raState').value.trim();
+      const city=modal.querySelector('#raCity').value.trim();
+      try{
+        const resp=await chrome.runtime.sendMessage({type:'GENERATE_REAL_ADDRESS', country, state, city});
+        if(!resp?.ok) throw new Error(resp?.error||'Failed');
+        render(parse(resp.result));
+      }catch(e){
+        showNotification('Failed to generate: '+e.message);
+      }
+    });
   }
 
   function showLastAnswerModal(answer) {
@@ -599,7 +604,7 @@
     const modal = createStyledModal('Last Answer', `
       <div style="background: linear-gradient(120deg, #120f12 80%, #0a0f17 100%); padding: 20px; border-radius: 10px; margin: 10px 0;">
         <div id="lastAnswerText" style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; margin-bottom: 20px; max-height: 200px; overflow-y: auto; color: #e2e8f0;">${text}</div>
-        <div id="lastAnswerCountdown" style="display:none; text-align:center; font-size:24px; font-weight:bold; color:#ff9800; margin-bottom:20px;">3</div>
+        <div id="lastAnswerCountdown" style="display:none; text-align:center; font-size:24px; font-weight:bold; color:#39ff14; margin-bottom:20px;">3</div>
         <div id="lastAnswerBtns" style="display: flex; justify-content: center; gap: 10px;">
           <button id="lastAnswerType" style="background: linear-gradient(45deg, #4ecdc4, #44a08d); border: none; color: white; padding: 10px 20px; border-radius: 25px; cursor: pointer; font-weight: bold;">Start Typing</button>
           <button id="lastAnswerCopy" style="background: linear-gradient(45deg, #ff6b6b, #feca57); border: none; color: white; padding: 10px 20px; border-radius: 25px; cursor: pointer; font-weight: bold;">Manual Entry</button>
@@ -624,7 +629,7 @@
               cd.textContent = count;
             } else {
               clearInterval(timer);
-              const m = document.getElementById('resuelv-styled-modal');
+              const m = document.getElementById('zepra-styled-modal');
               if (m) m.remove();
               typeAnswer(text, { skipCountdown: true });
             }
@@ -633,7 +638,7 @@
       });
       document.getElementById('lastAnswerCopy')?.addEventListener('click', () => {
         navigator.clipboard.writeText(text);
-        const m = document.getElementById('resuelv-styled-modal'); if (m) m.remove();
+        const m = document.getElementById('zepra-styled-modal'); if (m) m.remove();
         showNotification('Answer copied to clipboard');
       });
     }, 100);
@@ -647,7 +652,7 @@
           <div id="newSurveyText" style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; margin: 15px 0; max-height: 150px; overflow-y: auto;">
             <pre style="color: #94a3b8; white-space: pre-wrap; font-size: 14px; margin: 0;">${clipboardText || 'No text in clipboard'}</pre>
           </div>
-          <div id="newSurveyCountdown" style="display:none; text-align:center; font-size:24px; font-weight:bold; color:#ff9800; margin-bottom:20px;">3</div>
+          <div id="newSurveyCountdown" style="display:none; text-align:center; font-size:24px; font-weight:bold; color:#39ff14; margin-bottom:20px;">3</div>
           <div id="newSurveyBtns" style="display: flex; justify-content: center; gap: 10px; margin-top: 20px;">
             <button id="writeNowBtn" style="background: linear-gradient(45deg, #4ecdc4, #44a08d); border: none; color: white; padding: 12px 24px; border-radius: 25px; cursor: pointer; font-weight: bold; font-size: 14px;">Start Typing</button>
             <button id="manualEntryBtn" style="background: linear-gradient(45deg, #ff6b6b, #feca57); border: none; color: white; padding: 12px 24px; border-radius: 25px; cursor: pointer; font-weight: bold; font-size: 14px;">Manual Entry</button>
@@ -678,7 +683,7 @@
                   cd.textContent = count;
                 } else {
                   clearInterval(interval);
-                  const m = document.getElementById('resuelv-styled-modal');
+                  const m = document.getElementById('zepra-styled-modal');
                   if (m) m.remove();
                   typeAnswer(clipboardText, { skipCountdown: true });
                 }
@@ -689,7 +694,7 @@
         if (manualBtn) {
           manualBtn.addEventListener('click', () => {
             navigator.clipboard.writeText(clipboardText || '');
-            const m = document.getElementById('resuelv-styled-modal'); if (m) m.remove();
+            const m = document.getElementById('zepra-styled-modal'); if (m) m.remove();
             showNotification('Answer copied to clipboard');
           });
         }
@@ -761,7 +766,7 @@
       
       if (sendBtn) {
         sendBtn.addEventListener('click', () => {
-          const modal = document.getElementById('resuelv-styled-modal');
+          const modal = document.getElementById('zepra-styled-modal');
           if (modal) modal.remove();
           createRainbowModal(extractedText);
         });
@@ -769,7 +774,7 @@
       
       if (retakeBtn) {
         retakeBtn.addEventListener('click', () => {
-          const modal = document.getElementById('resuelv-styled-modal');
+          const modal = document.getElementById('zepra-styled-modal');
           if (modal) modal.remove();
           startOCRCapture();
         });
@@ -779,11 +784,11 @@
 
   function createStyledModal(title, content, onClose) {
     // Remove existing modal
-    const existing = document.getElementById('resuelv-styled-modal');
+    const existing = document.getElementById('zepra-styled-modal');
     if (existing) existing.remove();
 
     const modal = document.createElement('div');
-    modal.id = 'resuelv-styled-modal';
+    modal.id = 'zepra-styled-modal';
     modal.innerHTML = `
       <div class="styled-modal-content">
         <div class="styled-modal-header">
@@ -825,7 +830,7 @@
         width: 90%;
         max-height: 80vh;
         overflow: hidden;
-        border: 3px solid #64077d;
+        border: 3px solid #39ff14;
         box-shadow: 0 10px 30px rgba(0,0,0,0.3);
       }
       
@@ -840,7 +845,7 @@
       
       .styled-modal-header h3 {
         margin: 0;
-        color: #ff9800;
+        color: #39ff14;
         font-size: 18px;
         font-weight: bold;
       }
@@ -911,7 +916,7 @@
       white-space: pre-line;
       text-align: center;
       animation: slideDown 0.3s ease-out;
-      border: 2px solid #64077d;
+      border: 2px solid #39ff14;
     `;
     
     notification.textContent = message;
@@ -927,11 +932,11 @@
     if (STATE.modal) return;
 
     const modal = document.createElement('div');
-    modal.id = 'resuelv-modal';
+    modal.id = 'zepra-modal';
     modal.innerHTML = `
       <div class="modal-content">
         <div class="modal-header">
-          <h3>Resuelv+ Answer</h3>
+          <h3 class="zepra-gradient">Zepra Answer</h3>
           <button class="modal-close">&times;</button>
         </div>
         <div class="modal-body">
@@ -942,7 +947,9 @@
           </div>
           <div class="modal-actions" style="display: none;">
             <button class="btn-write-here">Write Here</button>
+            <button class="btn-write-all">Write All</button>
             <button class="btn-copy">Copy</button>
+            <button class="btn-humanizer">AI Humanizer</button>
             <button class="btn-use-prompt">Use Custom Prompt</button>
           </div>
         </div>
@@ -1004,7 +1011,7 @@
       
       .modal-header h3 {
         margin: 0;
-        color: #ff9800;
+        color: #39ff14;
         font-size: 18px;
         font-weight: bold;
       }
@@ -1100,7 +1107,7 @@
       }
 
       .btn-use-prompt {
-        background: linear-gradient(45deg, #ffd600, #ff9800) !important;
+        background: linear-gradient(45deg, #ffd600, #39ff14) !important;
         color: #181c20 !important;
       }
     `;
@@ -1122,23 +1129,26 @@
   async function generateAnswer(questionText, customPromptId = null) {
     try {
       const ctx = await getContext();
-      let answer = '';
+      let raw = '';
       let promptName = 'auto';
       if (customPromptId) {
         const resp = await chrome.runtime.sendMessage({ type: 'RUN_CUSTOM_PROMPT', id: customPromptId, text: questionText });
         if (!resp?.ok) throw new Error(resp?.error || 'Generation failed');
-        answer = resp.result;
+        raw = resp.result;
         promptName = resp.promptName || 'custom';
         await chrome.storage.local.set({ lastCustomPromptId: customPromptId });
       } else {
         const prompt = buildPrompt('auto', questionText, ctx);
         const response = await chrome.runtime.sendMessage({ type: 'GEMINI_GENERATE', prompt });
         if (!response?.ok) throw new Error(response?.error || 'Generation failed');
-        answer = response.result;
+        raw = response.result;
       }
+      const parts = parseAnswers(raw);
+      const joined = parts.join('\n');
+      const answer = joined;
       STATE.currentAnswer = answer;
       await chrome.storage.local.set({ lastAnswer: answer });
-      
+
       // Update modal
       const modal = STATE.modal;
       if (modal) {
@@ -1146,16 +1156,29 @@
         modal.querySelector('.answer-text').style.display = 'block';
         modal.querySelector('.answer-text').textContent = answer;
         modal.querySelector('.modal-actions').style.display = 'flex';
-        
+
         // Add event listeners for buttons
         modal.querySelector('.btn-write-here').addEventListener('click', async () => {
           closeModal();
-          await typeAnswer(answer);
+          await typeAnswer(parts[0] || '');
         });
-        
+
+        modal.querySelector('.btn-write-all').addEventListener('click', async () => {
+          closeModal();
+          for (const part of parts) {
+            await new Promise(r => setTimeout(r, 3000));
+            await typeAnswer(part, { skipCountdown: true });
+          }
+        });
+
         modal.querySelector('.btn-copy').addEventListener('click', () => {
           navigator.clipboard.writeText(answer);
           showNotification('Answer copied to clipboard!');
+        });
+
+        modal.querySelector('.btn-humanizer').addEventListener('click', async () => {
+          await navigator.clipboard.writeText(answer);
+          await openAIHumanizer();
         });
 
         modal.querySelector('.btn-use-prompt').addEventListener('click', () => {
@@ -1247,9 +1270,21 @@
     }
   }
 
+  function parseAnswers(text){
+    try {
+      const obj = JSON.parse(text);
+      if (Array.isArray(obj.answers)) {
+        return obj.answers.map(a => String(a).trim());
+      }
+    } catch(e) {
+      /* ignore */
+    }
+    return [text.trim()];
+  }
+
   function buildPrompt(mode, question, context) {
     const ctxLines = (context || []).map((c, i) => `Q${i + 1}: ${c.q}\nA${i + 1}: ${c.a}`).join('\n');
-    const rules = `You are answering a survey question. Use prior context if helpful and choose answers that keep the participant qualified for the survey.\nSTRICT OUTPUT RULES:\n- Output ONLY the final answer; no extra words or punctuation unless part of the answer.\n- Language: match the question language.`;
+    const rules = `You are building a consistent survey profile. Use prior context if helpful and choose answers that keep the participant qualified for the survey.\nSTRICT OUTPUT RULES:\n- Respond ONLY with JSON: {"answers": ["answer1", "answer2", ...]}.\n- Each element must correspond to the questions in order and remain consistent with previous answers.\n- Do not add any text outside the JSON.\n- Language: match the question language.`;
     const tasks = {
       open: 'Open-ended: write 1-3 short natural sentences.',
       mcq: 'Multiple Choice: return the EXACT option text from the provided question/options.',
@@ -1301,7 +1336,7 @@
             sendResponse({ ok: true, dataUrl: cropped });
             break;
           }
-          case 'SHOW_RESUELV_MODAL': {
+          case 'SHOW_ZEPRA_MODAL': {
             createRainbowModal(msg.text);
             sendResponse({ ok: true });
             break;
@@ -1381,7 +1416,7 @@
     return new Promise((resolve) => {
       let count = sec;
       const el = document.createElement('div');
-      el.style.cssText = 'position:fixed;top:20px;right:20px;padding:8px 14px;background:rgba(0,0,0,0.7);color:#ff9800;font-size:24px;border-radius:8px;z-index:2147483647;';
+      el.style.cssText = 'position:fixed;top:20px;right:20px;padding:8px 14px;background:rgba(0,0,0,0.7);color:#39ff14;font-size:24px;border-radius:8px;z-index:2147483647;';
       el.textContent = count;
       document.body.appendChild(el);
       const timer = setInterval(() => {
@@ -1462,7 +1497,7 @@
   function showSelectionButton(rect, text) {
     removeSelectionButton();
     const btn = document.createElement('div');
-    btn.id = 'resuelv-gen-btn';
+    btn.id = 'zepra-gen-btn';
     btn.textContent = 'Generate Answer';
     document.body.appendChild(btn);
     const btnWidth = btn.offsetWidth || 120;
@@ -1471,7 +1506,7 @@
     let top = window.scrollY + rect.top - 30;
     left = Math.min(window.scrollX + window.innerWidth - btnWidth - 10, Math.max(window.scrollX + 10, left));
     top = Math.min(window.scrollY + window.innerHeight - btnHeight - 10, Math.max(window.scrollY + 10, top));
-    btn.style.cssText = `position:absolute;left:${left}px;top:${top}px;z-index:2147483647;background:#23272b;color:#ff9800;padding:4px 8px;border-radius:6px;font-size:12px;box-shadow:0 0 8px rgba(255,152,0,0.7);cursor:pointer;transition:transform 0.2s;`;
+    btn.style.cssText = `position:absolute;left:${left}px;top:${top}px;z-index:2147483647;background:#23272b;color:#39ff14;padding:4px 8px;border-radius:6px;font-size:12px;box-shadow:0 0 8px rgba(255,152,0,0.7);cursor:pointer;transition:transform 0.2s;`;
     btn.addEventListener('mouseenter', () => { btn.style.transform = 'scale(1.05)'; });
     btn.addEventListener('mouseleave', () => { btn.style.transform = 'scale(1)'; });
     btn.addEventListener('mousedown', (e) => {
@@ -1515,4 +1550,11 @@
   `;
   document.head.appendChild(globalStyle);
 
-})();
+}
+
+chrome.storage.local.get('loggedIn', ({ loggedIn }) => {
+  if (loggedIn) init();
+});
+chrome.storage.onChanged.addListener((chg, area) => {
+  if (area === 'local' && chg.loggedIn?.newValue) init();
+});

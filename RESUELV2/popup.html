@@ -3,38 +3,36 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>Resuelv+</title>
+    <title>Zepra</title>
     <link rel="stylesheet" href="styles.css">
     <style>
         body {
             font-family: Arial, sans-serif;
             margin: 0;
             padding: 0;
-            background: #181c20;
+            background: #000;
         }
 
         .popup-card {
-            background: #23272b;
+            background: var(--card);
             border-radius: 12px;
-            box-shadow: 0 2px 16px rgba(230, 197, 157, 0.45);
+            box-shadow: 0 0 20px rgba(57,255,20,0.3), 0 0 20px rgba(255,230,0,0.3);
             padding: 22px 18px 16px 18px;
             min-width: 370px;
             max-width: 520px;
             display: flex;
             flex-direction: column;
             align-items: stretch;
-            border: 2px solid #64077d;
+            border: 2px solid var(--accent);
         }
 
-        .titulo-Resuelv {
+        .title.zepra-gradient {
             text-align: center;
             margin-bottom: 18px;
             font-family: 'Montserrat', Arial, sans-serif;
-            color: #ff9800;
             letter-spacing: 1px;
             font-size: 1.7rem;
             font-weight: bold;
-            text-shadow: 0 2px 8px #181c20cc;
         }
 
         .buttons-container {
@@ -45,8 +43,20 @@
             margin-top: 0px;
         }
 
+        .user-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 8px 0;
+            font-size: 0.85rem;
+            color: var(--muted);
+        }
+        .user-left { display: flex; align-items: center; gap: 6px; }
+        #sessionTimer { color: #ffd600; font-weight: 600; }
+        .btn.logout { background: #dc2626; border-color: #dc2626; color: #fff; padding: 4px 8px; font-size: 12px; }
+
         .nav-btn {
-            background: linear-gradient(120deg, #2b232a 60%, #4d1455be 100%);
+            background: linear-gradient(120deg, #000 60%, #39ff1480 100%);
             border: none;
             border-radius: 50%;
             width: 40px;
@@ -63,7 +73,7 @@
         }
 
         .nav-btn:hover {
-            background: linear-gradient(120deg, #691b93f7 60%, #9305b7 100%);
+            background: linear-gradient(120deg, #39ff1499 60%, #ffe600 100%);
             transform: scale(1.1);
             box-shadow: 0 4px 16px rgba(255, 214, 0, 0.3);
         }
@@ -89,7 +99,7 @@
         }
 
         .icon-btn {
-            background: linear-gradient(120deg, #2b232a 60%, #4d1455be 100%);
+            background: linear-gradient(120deg, #000 60%, #39ff1480 100%);
             border: none;
             border-radius: 0;
             width: 96px;
@@ -134,7 +144,7 @@
             right: 18%;
             bottom: 0;
             height: 0;
-            background: linear-gradient(90deg, #ff9800 0%, #ffd600 100%);
+            background: linear-gradient(90deg, #39ff14 0%, #ffd600 100%);
             border-radius: 0 0 8px 8px;
             transition: height 0.18s;
             z-index: 1;
@@ -147,9 +157,9 @@
 
         .icon-btn:hover,
         .icon-btn:focus {
-            background: linear-gradient(120deg, #691b93f7 60%, #9305b7 100%);
+            background: linear-gradient(120deg, #39ff1499 60%, #ffe600 100%);
             color: #ffffff;
-            box-shadow: 0 4px 24px #ff980055;
+            box-shadow: 0 4px 24px #39ff1455;
             transform: translateY(-2px) scale(1.06);
             outline: none;
         }
@@ -174,7 +184,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            filter: drop-shadow(0 1px 2px #ff980055);
+            filter: drop-shadow(0 1px 2px #39ff1455);
             transition: filter 0.18s;
         }
 
@@ -344,8 +354,17 @@
     <div id="app" class="popup-card">
         <!-- Header -->
         <div class="header">
-            <div class="title">Resuelv+</div>
-            <a class="link" id="openOptions">Options</a>
+            <div class="title zepra-gradient">Zepra</div>
+            <div>
+                <a class="link" id="openCustomWeb" style="margin-right:10px;">Custom Web</a>
+                <a class="link" id="openOptions">Options</a>
+            </div>
+        </div>
+
+        <!-- User Info -->
+        <div id="userBar" class="user-bar">
+            <div class="user-left"><span id="userEmail"></span><button id="logoutBtn" class="btn logout">Logout</button></div>
+            <div id="sessionTimer">00:00:00</div>
         </div>
 
         <!-- Main Action Buttons with Navigation -->

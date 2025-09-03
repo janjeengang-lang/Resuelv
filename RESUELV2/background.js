@@ -9,28 +9,79 @@ const DEFAULTS = {
   ocrLang: 'eng',
 };
 
+const SESSION_DURATION = 3 * 60 * 60 * 1000; // 3 hours
+
+async function forceLogout(reason = 'Your session has expired. Please log in again.') {
+  await chrome.storage.local.remove(['loggedIn', 'loginTime', 'userEmail', 'idToken', 'refreshToken', 'lastAuthCheck']);
+  await chrome.storage.local.set({ logoutMsg: reason });
+  updatePopup();
+  updateContextMenu();
+}
+
+async function checkSession() {
+  const { loggedIn, loginTime } = await chrome.storage.local.get(['loggedIn', 'loginTime']);
+  if (!loggedIn || !loginTime) {
+    await forceLogout();
+    return { ok: false };
+  }
+  const remaining = SESSION_DURATION - (Date.now() - loginTime);
+  if (remaining <= 0) {
+    await forceLogout();
+    return { ok: false };
+  }
+  return { ok: true, remaining };
+}
+
+async function updatePopup() {
+  const { loggedIn } = await chrome.storage.local.get('loggedIn');
+  const popup = loggedIn ? 'popup.html' : 'login.html';
+  await chrome.action.setPopup({ popup });
+}
+
+async function updateContextMenu() {
+  const { loggedIn } = await chrome.storage.local.get('loggedIn');
+  await chrome.contextMenus.removeAll();
+  if (loggedIn) {
+    chrome.contextMenus.create({
+      id: 'sendToZepra',
+      title: 'Send to Zepra',
+      contexts: ['selection'],
+      documentUrlPatterns: ['<all_urls>']
+    });
+  }
+}
+
+updatePopup();
+updateContextMenu();
+checkSession();
+chrome.runtime.onStartup.addListener(() => {
+  updatePopup();
+  updateContextMenu();
+  checkSession();
+});
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes.loggedIn) {
+    updatePopup();
+    updateContextMenu();
+  }
+});
+
 chrome.runtime.onInstalled.addListener(async () => {
   try {
     const cur = await chrome.storage.local.get(Object.keys(DEFAULTS));
     const toSet = {};
     for (const [k, v] of Object.entries(DEFAULTS)) if (cur[k] === undefined) toSet[k] = v;
     if (Object.keys(toSet).length) await chrome.storage.local.set(toSet);
-    
-    // Create context menu
-    await chrome.contextMenus.removeAll();
-    chrome.contextMenus.create({
-      id: 'sendToResuelv',
-      title: 'Send to Resuelv',
-      contexts: ['selection'],
-      documentUrlPatterns: ['<all_urls>']
-    });
   } catch (e) {
     console.error('Error initializing defaults:', e);
   }
+  updatePopup();
+  updateContextMenu();
+  checkSession();
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  if (info.menuItemId === 'sendToResuelv' && info.selectionText) {
+  if (info.menuItemId === 'sendToZepra' && info.selectionText) {
     try {
       // Ensure content script is injected
       await chrome.scripting.executeScript({
@@ -42,7 +93,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       setTimeout(async () => {
         try {
           await chrome.tabs.sendMessage(tab.id, {
-            type: 'SHOW_RESUELV_MODAL',
+            type: 'SHOW_ZEPRA_MODAL',
             text: info.selectionText
           });
         } catch (e) {
@@ -89,6 +140,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse(text);
           break;
         }
+        case 'CHECK_AUTH': {
+          const res = await checkSession();
+          sendResponse(res);
+          break;
+        }
+        case 'LOGOUT': {
+          await forceLogout(message.reason || 'Logged out');
+          sendResponse({ ok: true });
+          break;
+        }
         case 'GET_PUBLIC_IP': {
           const info = await getPublicIP();
           sendResponse({ ok: true, info });
@@ -114,6 +175,42 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
           break;
         }
+        case 'OPEN_CUSTOM_WEB': {
+          const openerTabId = message.openerTabId || sender?.tab?.id || (await getActiveTabId());
+          const { customWebSize = { width: 1000, height: 800 } } = await chrome.storage.local.get('customWebSize');
+          await chrome.windows.create({
+            url: chrome.runtime.getURL(`custom_web.html?tabId=${openerTabId}`),
+            type: 'popup',
+            width: customWebSize.width || 1000,
+            height: customWebSize.height || 800
+          });
+          sendResponse({ ok: true });
+          break;
+        }
+        case 'OPEN_OR_FOCUS_CUSTOM_WEB': {
+          const siteUrl = message.url;
+          const openerTabId = message.openerTabId || sender?.tab?.id || (await getActiveTabId());
+          const { customWebSize = { width: 1000, height: 800 } } = await chrome.storage.local.get('customWebSize');
+          const encoded = encodeURIComponent(siteUrl || '');
+          const wins = await chrome.windows.getAll({ populate: true });
+          for (const win of wins) {
+            const tab = (win.tabs || []).find(t => t.url && t.url.includes('custom_web.html') && t.url.includes(`url=${encoded}`));
+            if (tab) {
+              await chrome.windows.update(win.id, { focused: true });
+              await chrome.tabs.update(tab.id, { active: true });
+              sendResponse({ ok: true, focused: true });
+              return;
+            }
+          }
+          await chrome.windows.create({
+            url: chrome.runtime.getURL(`custom_web.html?tabId=${openerTabId}&url=${encoded}`),
+            type: 'popup',
+            width: customWebSize.width || 1000,
+            height: customWebSize.height || 800
+          });
+          sendResponse({ ok: true, created: true });
+          break;
+        }
         case 'GET_TAB_ID': {
           const id = sender?.tab?.id || (await getActiveTabId());
           sendResponse({ ok: true, tabId: id });
@@ -133,6 +230,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           const { gender, nat, force } = message;
           const data = await fetchRandomUser({ gender, nat, force });
           sendResponse({ ok: true, data });
+          break;
+        }
+        case 'GENERATE_REAL_ADDRESS': {
+          const { country = '', state = '', city = '' } = message;
+          const prompt = `Generate a real mailing address based on the following details.\nCountry: ${country}\nState/Province: ${state}\nCity/Zip Code: ${city}\nRespond ONLY with a JSON object: {"address_1": "", "address_2": "", "zip_code": ""}`;
+          const result = await callOpenRouter(prompt);
+          sendResponse({ ok: true, result });
           break;
         }
         default:
