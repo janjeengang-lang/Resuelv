@@ -1,10 +1,7 @@
 // options.js
 const els = {
-  aiProvider: document.getElementById('aiProvider'),
-  openrouterKey: document.getElementById('openrouterKey'),
-  openrouterModel: document.getElementById('openrouterModel'),
-  geminiKey: document.getElementById('geminiKey'),
   cerebrasKey: document.getElementById('cerebrasKey'),
+  cerebrasModel: document.getElementById('cerebrasModel'),
   ocrKey: document.getElementById('ocrKey'),
   ipdataKey: document.getElementById('ipdataKey'),
   typingSpeed: document.getElementById('typingSpeed'),
@@ -22,7 +19,20 @@ const els = {
   savePrompt: document.getElementById('savePrompt'),
   cancelPrompt: document.getElementById('cancelPrompt'),
   promptTable: document.getElementById('promptTable')?.querySelector('tbody'),
+  siteName: document.getElementById('siteName'),
+  siteUrl: document.getElementById('siteUrl'),
+  addSite: document.getElementById('addSite'),
+  sitesList: document.getElementById('sitesList'),
+  webWidth: document.getElementById('webWidth'),
+  webHeight: document.getElementById('webHeight'),
 };
+
+const DEFAULT_SITES = [
+  { name:'Easemate Chat', url:'https://www.easemate.ai/webapp/chat' },
+  { name:'Whoer', url:'https://whoer.net/' },
+  { name:'AI Humanizer', url:'https://bypassai.writecream.com/' },
+  { name:'Prinsh Notepad', url:'https://notepad.prinsh.com/' }
+];
 
 function notify(msg, isErr = false) {
   // Add guard to prevent errors if the status element is missing.
@@ -34,28 +44,26 @@ function notify(msg, isErr = false) {
 async function load() {
   try {
     const s = await chrome.storage.local.get([
-      'aiProvider',
-      'openrouterApiKey',
-      'openrouterModel',
-      'geminiApiKey',
       'cerebrasApiKey',
+      'cerebrasModel',
       'ocrApiKey',
       'ipdataApiKey',
       'typingSpeed',
       'ocrLang',
+      'customWebSize',
     ]);
 
-    els.aiProvider.value     = s.aiProvider || 'openrouter';
-    els.openrouterKey.value  = s.openrouterApiKey || '';
-    els.openrouterModel.value= s.openrouterModel || 'google/gemini-2.0-flash-exp:free';
-    els.geminiKey.value      = s.geminiApiKey || '';
     els.cerebrasKey.value    = s.cerebrasApiKey || '';
+    els.cerebrasModel.value  = s.cerebrasModel || 'gpt-oss-120b';
     els.ocrKey.value         = s.ocrApiKey || '';
     els.ipdataKey.value      = s.ipdataApiKey || '';
     els.typingSpeed.value    = s.typingSpeed || 'normal';
     els.ocrLang.value        = s.ocrLang || 'eng';
+    els.webWidth.value       = s.customWebSize?.width || 1000;
+    els.webHeight.value      = s.customWebSize?.height || 800;
 
     await loadPrompts();
+    await loadSites();
     console.log('Settings loaded successfully');
   } catch (e) {
     console.error('Error loading settings:', e);
@@ -68,6 +76,15 @@ let editingId = null;
 async function loadPrompts() {
   const { customPrompts = [] } = await chrome.storage.sync.get('customPrompts');
   renderPromptTable(customPrompts);
+}
+
+async function loadSites(){
+  let { customSites = [] } = await chrome.storage.local.get('customSites');
+  if(!customSites.length){
+    customSites = DEFAULT_SITES;
+    await chrome.storage.local.set({ customSites });
+  }
+  renderSites(customSites);
 }
 
 function renderPromptTable(list) {
@@ -121,6 +138,28 @@ function renderPromptTable(list) {
   );
 }
 
+function renderSites(list){
+  if(!els.sitesList) return;
+  els.sitesList.innerHTML = '';
+  list.forEach((s, idx) => {
+    const li = document.createElement('li');
+    li.style.display = 'flex';
+    li.style.justifyContent = 'space-between';
+    li.style.alignItems = 'center';
+    li.style.marginBottom = '6px';
+    li.innerHTML = `<span>${s.name}</span><button class="btn small warn" data-del="${idx}">Delete</button>`;
+    els.sitesList.appendChild(li);
+  });
+  els.sitesList.querySelectorAll('button[data-del]').forEach(btn =>
+    btn.addEventListener('click', async e => {
+      const idx = Number(e.currentTarget.getAttribute('data-del'));
+      list.splice(idx,1);
+      await chrome.storage.local.set({customSites: list});
+      renderSites(list);
+    })
+  );
+}
+
 function resetPromptForm() {
   els.promptName.value = '';
   els.promptTags.value = '';
@@ -130,6 +169,18 @@ function resetPromptForm() {
 }
 
 els.cancelPrompt?.addEventListener('click', resetPromptForm);
+
+els.addSite?.addEventListener('click', async () => {
+  const name = els.siteName.value.trim();
+  const url = els.siteUrl.value.trim();
+  if (!name || !url) { notify('Name and URL required', true); return; }
+  const { customSites = [] } = await chrome.storage.local.get('customSites');
+  customSites.push({ name, url });
+  await chrome.storage.local.set({ customSites });
+  els.siteName.value = '';
+  els.siteUrl.value = '';
+  renderSites(customSites);
+});
 
 els.savePrompt?.addEventListener('click', async () => {
   const name = els.promptName.value.trim();
@@ -159,15 +210,16 @@ els.savePrompt?.addEventListener('click', async () => {
 els.save?.addEventListener('click', async () => {
   try {
     await chrome.storage.local.set({
-      aiProvider:        els.aiProvider.value,
-      openrouterApiKey:  els.openrouterKey.value.trim(),
-      openrouterModel:   els.openrouterModel.value,
-      geminiApiKey:      els.geminiKey.value.trim(),
       cerebrasApiKey:    els.cerebrasKey.value.trim(),
+      cerebrasModel:     els.cerebrasModel.value,
       ocrApiKey:         els.ocrKey.value.trim(),
       ipdataApiKey:      els.ipdataKey.value.trim(),
       typingSpeed:       els.typingSpeed.value,
       ocrLang:           els.ocrLang.value,
+      customWebSize:     {
+        width: Number(els.webWidth.value) || 1000,
+        height: Number(els.webHeight.value) || 800,
+      },
     });
     notify('Saved');
     console.log('Settings saved successfully');
@@ -186,12 +238,12 @@ els.clear?.addEventListener('click', async () => {
 els.test?.addEventListener('click', async () => {
   try {
     notify('Testing…');
-    // تِست بسيط عبر خدمة الخلفية (اضبط الرسالة حسب مزودك)
+    // Simple test via Cerebras backend
     const res = await chrome.runtime.sendMessage({
-      type: 'GEMINI_GENERATE',
+      type: 'CEREBRAS_GENERATE',
       prompt: 'Respond with: OK'
     });
-    if (!res?.ok) throw new Error(res?.error || 'OpenRouter failed');
+    if (!res?.ok) throw new Error(res?.error || 'Cerebras failed');
     if (!/\bOK\b/i.test(res.result)) notify('API responded, not strictly OK: ' + res.result);
     else notify('API OK');
   } catch (e) {
