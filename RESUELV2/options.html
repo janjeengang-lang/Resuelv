@@ -3,35 +3,33 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Resuelv+ Options</title>
+    <title>Zepra Options</title>
     <link rel="stylesheet" href="styles.css" />
     <style>
       body {
         font-family: Arial, sans-serif;
         margin: 0;
         padding: 20px;
-        background: #181c20;
+        background: #000;
         color: #e2e8f0;
       }
 
       .page {
-        background: #23272b;
+        background: var(--card);
         border-radius: 12px;
-        box-shadow: 0 2px 16px rgba(230, 197, 157, 0.45);
+        box-shadow: 0 0 20px rgba(57,255,20,0.3), 0 0 20px rgba(255,230,0,0.3);
         padding: 22px 18px 16px 18px;
         min-width: 400px;
         max-width: 600px;
         margin: 0 auto;
-        border: 2px solid #64077d;
+        border: 2px solid var(--accent);
       }
 
       h2 {
         text-align: center;
-        color: #ff9800;
         font-size: 1.8rem;
         font-weight: bold;
         margin-bottom: 24px;
-        text-shadow: 0 2px 8px #181c20cc;
       }
 
       .group {
@@ -45,10 +43,10 @@
 
       .subtitle {
         font-size: 1.2em;
-        color: #ffd600;
+        color: var(--accent2);
         font-weight: bold;
         margin-bottom: 16px;
-        text-shadow: 0 1px 2px #181c20cc;
+        text-shadow: 0 1px 2px #000;
       }
 
       label.row {
@@ -182,26 +180,10 @@
     </style>
   </head>
   <body class="page">
-    <h2>Options</h2>
+    <h2 class="zepra-gradient">Zepra Options</h2>
 
     <div class="group">
       <div class="subtitle">API Keys</div>
-      <label class="row">
-        <span>AI Provider</span>
-        <select id="aiProvider">
-          <option value="openrouter">OpenRouter</option>
-          <option value="gemini">Google AI Studio (Gemini)</option>
-          <option value="cerebras">Cerebras</option>
-        </select>
-      </label>
-      <label class="row">
-        <span>OpenRouter API Key</span>
-        <input id="openrouterKey" type="password" placeholder="sk-or-..." />
-      </label>
-      <label class="row">
-        <span>Google AI Studio API Key</span>
-        <input id="geminiKey" type="password" placeholder="(for Gemini)" />
-      </label>
       <label class="row">
         <span>Cerebras API Key</span>
         <input id="cerebrasKey" type="password" placeholder="csk-..." />
@@ -220,15 +202,17 @@
     <div class="group">
       <div class="subtitle">Model & Typing</div>
       <label class="row">
-        <span>OpenRouter Model</span>
-        <select id="openrouterModel">
-          <option value="google/gemini-2.0-flash-exp:free">google/gemini-2.0-flash-exp:free</option>
-          <option value="meta-llama/llama-3.1-8b-instruct:free">meta-llama/llama-3.1-8b-instruct:free</option>
-          <option value="microsoft/phi-3-mini-128k-instruct:free">microsoft/phi-3-mini-128k-instruct:free</option>
-          <option value="huggingface/zephyr-7b-beta:free">huggingface/zephyr-7b-beta:free</option>
-          <option value="openchat/openchat-7b:free">openchat/openchat-7b:free</option>
-          <option value="gryphe/mythomist-7b:free">gryphe/mythomist-7b:free</option>
-          <option value="undi95/toppy-m-7b:free">undi95/toppy-m-7b:free</option>
+        <span>Cerebras Model</span>
+        <select id="cerebrasModel">
+          <option value="qwen-3-coder-480b">qwen-3-coder-480b</option>
+          <option value="qwen-3-235b-a22b-instruct-2507">qwen-3-235b-a22b-instruct-2507</option>
+          <option value="qwen-3-235b-a22b-thinking-2507">qwen-3-235b-a22b-thinking-2507</option>
+          <option value="qwen-3-32b">qwen-3-32b</option>
+          <option value="llama-3.3-70b">llama-3.3-70b</option>
+          <option value="llama-4-maverick-17b-128e-instruct">llama-4-maverick-17b-128e-instruct</option>
+          <option value="llama-4-scout-17b-16e-instruct">llama-4-scout-17b-16e-instruct</option>
+          <option value="llama3.1-8b">llama3.1-8b</option>
+          <option value="gpt-oss-120b" selected>gpt-oss-120b</option>
         </select>
       </label>
       <label class="row">
@@ -280,6 +264,36 @@
         <thead><tr><th>Name</th><th>Tags</th><th>Hotkey</th><th>Actions</th></tr></thead>
         <tbody></tbody>
       </table>
+    </div>
+
+    <div class="group">
+      <div class="subtitle">Custom Sites</div>
+      <form id="siteForm">
+        <label class="row">
+          <span>Name</span>
+          <input id="siteName" type="text" />
+        </label>
+        <label class="row">
+          <span>URL</span>
+          <input id="siteUrl" type="url" placeholder="https://example.com/" />
+        </label>
+        <div class="row end">
+          <button id="addSite" type="button" class="btn primary">Add</button>
+        </div>
+      </form>
+      <ul id="sitesList" style="list-style:none; padding-left:0; margin-top:10px;"></ul>
+    </div>
+
+    <div class="group">
+      <div class="subtitle">Custom Window Size</div>
+      <label class="row">
+        <span>Width</span>
+        <input id="webWidth" type="number" min="400" />
+      </label>
+      <label class="row">
+        <span>Height</span>
+        <input id="webHeight" type="number" min="300" />
+      </label>
     </div>
 
     <div class="row end">
