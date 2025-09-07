@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Identities</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    body{background:#000;color:#e2e8f0;font-family:Arial,sans-serif;margin:0;padding:20px;}
+    h1{margin-top:0;}
+    .grid{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px;}
+    .card{background:var(--card);border:2px solid #292d33;border-radius:12px;padding:12px;width:220px;position:relative;box-shadow:0 0 12px rgba(57,255,20,0.2);}
+    .card.active{border-color:#39ff14;box-shadow:0 0 20px #39ff14;}
+    .card img{width:60px;height:60px;border-radius:50%;object-fit:cover;margin-bottom:8px;}
+    .card .name{font-weight:bold;color:#ffd600;}
+    .badge{position:absolute;top:8px;right:8px;background:#39ff14;color:#000;padding:2px 6px;border-radius:4px;font-size:0.7rem;}
+    .actions{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;}
+    .actions button{flex:1 1 45%;padding:4px;font-size:0.75rem;}
+    .toggle{display:flex;align-items:center;gap:4px;font-size:0.75rem;margin-top:4px;}
+    .btn{background:#1f2937;color:#e2e8f0;border:1px solid #334155;border-radius:6px;cursor:pointer;}
+    .btn:hover{background:#374151;}
+    #create,#quickConnectBtn{background:#39ff14;color:#000;border:none;padding:6px 10px;margin-right:8px;}
+    .modal{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:9999;}
+    .modal.hidden{display:none;}
+    .modal-content{background:#111;padding:20px;border:2px solid #39ff14;border-radius:8px;max-height:80vh;overflow:auto;width:400px;}
+    .modal-content h2{margin-top:0;color:#ffd600;}
+    .modal-content label{display:block;margin-top:10px;font-size:0.8rem;}
+    .modal-content input, .modal-content select{width:100%;padding:6px;margin-top:4px;background:#0b1220;color:#e2e8f0;border:1px solid #334155;border-radius:4px;}
+    .modal-content .form-actions{margin-top:12px;display:flex;gap:8px;justify-content:flex-end;}
+  </style>
+</head>
+<body>
+  <h1 class="zepra-gradient">Identities</h1>
+  <div>
+    <button id="create" class="btn">+ Create New Identity</button>
+    <button id="quickConnectBtn" class="btn">Quick Connect</button>
+  </div>
+  <div id="grid" class="grid"></div>
+
+  <!-- Identity Modal -->
+  <div id="identityModal" class="modal hidden">
+    <div class="modal-content">
+      <h2 id="modalTitle">New Identity</h2>
+      <form id="identityForm">
+        <input type="hidden" name="id">
+        <label>Identity Name<input name="identityName" required></label>
+        <label>Profile Picture URL<input name="profilePictureUrl"></label>
+        <label>Full Name<input name="fullName"></label>
+        <label>First Name<input name="firstName"></label>
+        <label>Last Name<input name="lastName"></label>
+        <label>Email<input name="email"></label>
+        <label>Username<input name="username"></label>
+        <label>Password<input name="password"></label>
+        <label>Phone<input name="phone"></label>
+        <label>Address 1<input name="address1"></label>
+        <label>Address 2<input name="address2"></label>
+        <label>City<input name="city"></label>
+        <label>State<input name="state"></label>
+        <label>Zip Code<input name="zipCode"></label>
+        <label>Country<input name="country"></label>
+        <label>Date of Birth<input name="dateOfBirth"></label>
+        <label class="toggle"><input type="checkbox" name="useProxy"> Use Proxy</label>
+        <label>Proxy IP<input name="proxyIp"></label>
+        <label>Proxy Port<input name="proxyPort"></label>
+        <label>Proxy Type<select name="proxyType">
+          <option>HTTP</option>
+          <option>HTTPS</option>
+          <option>SOCKS4</option>
+          <option>SOCKS5</option>
+        </select></label>
+        <label>Proxy Username<input name="proxyUsername"></label>
+        <label>Proxy Password<input name="proxyPassword"></label>
+        <div class="form-actions">
+          <button type="button" id="cancelIdentity" class="btn">Cancel</button>
+          <button type="submit" class="btn">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Quick Proxy Modal -->
+  <div id="quickModal" class="modal hidden">
+    <div class="modal-content">
+      <h2>Quick Proxy</h2>
+      <label>IP<input id="quickIp"></label>
+      <label>Port<input id="quickPort"></label>
+      <label>Type<select id="quickType">
+        <option>HTTP</option>
+        <option>HTTPS</option>
+        <option>SOCKS4</option>
+        <option>SOCKS5</option>
+      </select></label>
+      <label>Username<input id="quickUser"></label>
+      <label>Password<input id="quickPass" type="password"></label>
+      <div class="form-actions">
+        <button type="button" id="quickCancel" class="btn">Cancel</button>
+        <button type="button" id="quickConnect" class="btn">Connect</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="identities.js"></script>
+</body>
+</html>
