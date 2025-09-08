@@ -10,6 +10,8 @@ const els = {
   testIpdata: document.getElementById('testIpdata'),
   save: document.getElementById('save'),
   clear: document.getElementById('clear'),
+  showReasoning: document.getElementById('showReasoning'),
+  reasonLang: document.getElementById('reasonLang'),
   status: document.getElementById('status'),
   promptForm: document.getElementById('promptForm'),
   promptName: document.getElementById('promptName'),
@@ -52,6 +54,8 @@ async function load() {
       'typingSpeed',
       'ocrLang',
       'customWebSize',
+      'showReasoning',
+      'reasonLang',
     ]);
 
     els.cerebrasKey.value    = s.cerebrasApiKey || '';
@@ -62,6 +66,8 @@ async function load() {
     els.ocrLang.value        = s.ocrLang || 'eng';
     els.webWidth.value       = s.customWebSize?.width || 1000;
     els.webHeight.value      = s.customWebSize?.height || 800;
+    els.showReasoning.checked = s.showReasoning || false;
+    els.reasonLang.value      = s.reasonLang || '';
 
     await loadPrompts();
     await loadSites();
@@ -222,6 +228,8 @@ els.save?.addEventListener('click', async () => {
         width: Number(els.webWidth.value) || 1000,
         height: Number(els.webHeight.value) || 800,
       },
+      showReasoning:     els.showReasoning.checked,
+      reasonLang:        els.reasonLang.value.trim(),
     });
     notify('Saved');
     console.log('Settings saved successfully');

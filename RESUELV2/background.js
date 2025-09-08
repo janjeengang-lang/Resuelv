@@ -9,38 +9,9 @@ const DEFAULTS = {
   ocrLang: 'eng',
 };
 
-// IP info services used to validate proxies. We iterate these in order
-// until one responds successfully to avoid single-endpoint failures.
-const TEST_APIS = [
-  'https://api.ipify.org?format=json',
-  'https://ipinfo.io/json',
-  'https://ifconfig.me/ip',
-];
-
 const SESSION_DURATION = 3 * 60 * 60 * 1000; // 3 hours
 
-// Supply credentials to authenticated proxies. Credentials are retrieved
-// from storage each time so a service worker restart does not lose them.
-chrome.webRequest.onAuthRequired.addListener(
-  async (details) => {
-    if (details.isProxy) {
-      const { proxyAuth } = await chrome.storage.local.get('proxyAuth');
-      console.log('onAuthRequired triggered', details.challenger, proxyAuth);
-      if (proxyAuth?.username) {
-        return {
-          authCredentials: {
-            username: proxyAuth.username,
-            password: proxyAuth.password,
-          },
-        };
-      }
-    }
-    console.log('onAuthRequired: no credentials supplied');
-    return {};
-  },
-  { urls: ['<all_urls>'] },
-  ['blocking']
-);
+const STRICT_JSON = 'CRITICAL: Your response MUST be ONLY the raw JSON object. Do not include any introductory text, explanations, markdown formatting like ```json```, or any text outside of the JSON structure.';
 
 
 async function forceLogout(reason = 'Your session has expired. Please log in again.') {
@@ -271,6 +242,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ ok: true, result, promptName: pr.name });
           break;
         }
+        case 'GENERATE_IDENTITY': {
+          const { prompt } = message;
+          const p = `Create a fictional persona for survey qualification based on: "${prompt}". Respond ONLY with a single JSON object containing fields: identityName, profilePictureUrl, fullName, firstName, lastName, age, email, username, password, phone, address1, address2, city, state, zipCode, country, macAddress, companyName, companyIndustry, companySize, companyAnnualRevenue, companyWebsite, companyAddress.\n${STRICT_JSON}`;
+          const result = await callCerebras(p);
+          sendResponse({ ok: true, result });
+          break;
+        }
+        case 'GENERATE_COMPANY': {
+          const p = `Generate fake but realistic company information. Respond ONLY with a JSON object containing fields: companyName, companyIndustry, companySize, companyAnnualRevenue, companyWebsite, companyAddress.\n${STRICT_JSON}`;
+          const result = await callCerebras(p);
+          sendResponse({ ok: true, result });
+          break;
+        }
         case 'GENERATE_FAKE_INFO': {
           const { gender, nat, force } = message;
           const data = await fetchRandomUser({ gender, nat, force });
@@ -279,67 +263,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         case 'GENERATE_REAL_ADDRESS': {
           const { country = '', state = '', city = '' } = message;
-          const prompt = `Generate a real mailing address based on the following details.\nCountry: ${country}\nState/Province: ${state}\nCity/Zip Code: ${city}\nRespond ONLY with a JSON object: {"address_1": "", "address_2": "", "zip_code": ""}`;
+          const prompt = `Generate a real mailing address based on the following details.\nCountry: ${country}\nState/Province: ${state}\nCity/Zip Code: ${city}\nRespond ONLY with a JSON object: {"address_1": "", "address_2": "", "zip_code": ""}\n${STRICT_JSON}`;
           const result = await callCerebras(prompt);
           sendResponse({ ok: true, result });
-          break;
-        }
-        case 'SET_PROXY': {
-          try {
-            const proxy = message.proxy || {};
-            const realInfo = await fetchIPInfoWithTimeout();
-            await validateProxy(proxy); // pre-check
-
-            const scheme = (proxy.proxyType || 'http').toLowerCase();
-            const singleProxy = {
-              scheme,
-              host: proxy.proxyIp,
-              port: parseInt(proxy.proxyPort, 10) || 0
-            };
-            if (scheme.startsWith('socks') && proxy.proxyUsername) {
-              singleProxy.host = `${proxy.proxyUsername}:${proxy.proxyPassword || ''}@${proxy.proxyIp}`;
-            } else {
-              await chrome.storage.local.set({ proxyAuth: { username: proxy.proxyUsername, password: proxy.proxyPassword } });
-            }
-
-            await chrome.proxy.settings.set({
-              value: {
-                mode: 'fixed_servers',
-                rules: { singleProxy }
-              },
-              scope: 'regular'
-            });
-            try {
-              const info = await fetchIPInfoWithTimeout();
-              if (!info.ip || info.ip === realInfo.ip) throw new Error('Connection failed');
-              await chrome.storage.local.set({ proxyActive: true, proxyInfo: info, proxyUsage: 0 });
-              startUsageMonitor();
-              sendResponse({ ok: true, info });
-            } catch (e) {
-              await chrome.proxy.settings.clear({ scope: 'regular' });
-              await chrome.storage.local.remove('proxyAuth');
-              throw e;
-            }
-          } catch (e) {
-            sendResponse({ ok: false, error: mapProxyError(e) });
-          }
-          break;
-        }
-        case 'CLEAR_PROXY': {
-          await chrome.proxy.settings.clear({ scope: 'regular' });
-          await chrome.storage.local.set({ proxyActive: false, proxyInfo: null, proxyUsage: 0 });
-          await chrome.storage.local.remove('proxyAuth');
-          stopUsageMonitor();
-          sendResponse({ ok: true });
-          break;
-        }
-        case 'TEST_PROXY': {
-          try {
-            const info = await validateProxy(message.proxy || {});
-            sendResponse({ ok: true, info });
-          } catch (e) {
-            sendResponse({ ok: false, error: mapProxyError(e) });
-          }
           break;
         }
         default:
@@ -351,32 +277,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   })();
   return true; // async
 });
-
-let usageListener = null;
-function startUsageMonitor() {
-  usageListener = (details) => {
-    const cl = details.responseHeaders?.find(h => h.name.toLowerCase() === 'content-length');
-    if (cl) {
-      const val = parseInt(cl.value, 10);
-      if (!isNaN(val)) {
-        chrome.storage.local.get('proxyUsage', ({ proxyUsage = 0 }) => {
-          chrome.storage.local.set({ proxyUsage: proxyUsage + val });
-        });
-      }
-    }
-  };
-  try {
-    chrome.webRequest.onCompleted.addListener(usageListener, { urls: ['<all_urls>'] }, ['responseHeaders']);
-  } catch (e) {
-    console.error('usage listener error', e);
-  }
-}
-function stopUsageMonitor() {
-  if (usageListener) {
-    try { chrome.webRequest.onCompleted.removeListener(usageListener); } catch (e) {}
-    usageListener = null;
-  }
-}
 
 async function callCerebras(prompt) {
   const { cerebrasApiKey = '', cerebrasModel } = await chrome.storage.local.get([
@@ -399,14 +299,19 @@ async function callCerebras(prompt) {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${cerebrasApiKey}`
   };
-  const res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
-  if (!res.ok) {
-    const t = await res.text().catch(() => '');
-    throw new Error(`Cerebras error ${res.status}: ${t}`);
+  try {
+    const res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
+    if (!res.ok) {
+      const t = await res.text().catch(() => '');
+      throw new Error(`Cerebras error ${res.status}: ${t}`);
+    }
+    const data = await res.json();
+    const text = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.delta?.content || '';
+    return sanitize(text);
+  } catch (err) {
+    console.error('Zepra Debug: Cerebras fetch failed:', err);
+    throw err;
   }
-  const data = await res.json();
-  const text = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.delta?.content || '';
-  return sanitize(text);
 }
 
 async function performOCR(imageDataUrl, lang) {
@@ -594,81 +499,6 @@ async function testIPData(key) {
 
 function isIP(host) {
   return /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
-}
-
-async function resolveHostname(host) {
-  if (isIP(host)) return host;
-  const url = `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(host)}&type=A`;
-  const res = await fetch(url, { headers: { accept: 'application/dns-json' } });
-  if (!res.ok) throw new Error('DNS Not Resolved');
-  const data = await res.json();
-  const answer = data.Answer?.find(a => a.type === 1);
-  if (!answer?.data) throw new Error('DNS Not Resolved');
-  return answer.data;
-}
-
-function mapProxyError(e) {
-  const msg = e?.message || String(e);
-  if (msg.includes('DNS Not Resolved') || msg.includes('Invalid Hostname')) return '❌ Failed: DNS Not Resolved';
-  if (msg.includes('407') || msg.toLowerCase().includes('auth')) return '❌ Failed: Authentication Required';
-  if (msg.includes('timed out') || msg.includes('Timeout') || msg.includes('aborted')) return '❌ Failed: Connection Timed Out';
-  if (msg.includes('Connection failed')) return '❌ Failed: Connection Failed';
-  return '❌ Proxy is offline or refusing connection';
-}
-
-async function fetchIPInfoWithTimeout(timeoutMs = 8000) {
-  let lastErr = null;
-  for (const api of TEST_APIS) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const res = await fetch(api, { signal: controller.signal });
-      clearTimeout(timer);
-      if (res.status === 407 || res.status === 401) throw new Error('407');
-      if (!res.ok) throw new Error('IP check failed');
-      if (api.includes('ipify')) {
-        const d = await res.json();
-        return { ip: d.ip };
-      } else if (api.includes('ipinfo')) {
-        const d = await res.json();
-        return { ip: d.ip, city: d.city, country: d.country };
-      } else {
-        const text = await res.text();
-        return { ip: text.trim() };
-      }
-    } catch (e) {
-      clearTimeout(timer);
-      lastErr = e.name === 'AbortError' ? new Error('Connection timed out') : e;
-    }
-  }
-  if (lastErr) throw lastErr;
-  throw new Error('IP check failed');
-}
-
-async function validateProxy(proxy) {
-  await resolveHostname(proxy.proxyIp);
-  const scheme = (proxy.proxyType || 'http').toLowerCase();
-  const singleProxy = {
-    scheme,
-    host: proxy.proxyIp,
-    port: parseInt(proxy.proxyPort, 10) || 0
-  };
-  if (scheme.startsWith('socks') && proxy.proxyUsername) {
-    singleProxy.host = `${proxy.proxyUsername}:${proxy.proxyPassword || ''}@${proxy.proxyIp}`;
-  } else {
-    await chrome.storage.local.set({ proxyAuth: { username: proxy.proxyUsername, password: proxy.proxyPassword } });
-  }
-  try {
-    await chrome.proxy.settings.set({
-      value: { mode: 'fixed_servers', rules: { singleProxy } },
-      scope: 'regular'
-    });
-    const info = await fetchIPInfoWithTimeout();
-    return info;
-  } finally {
-    try { await chrome.proxy.settings.clear({ scope: 'regular' }); } catch (e) {}
-    await chrome.storage.local.remove('proxyAuth');
-  }
 }
 
 async function fetchRandomUser({ gender = '', nat = '', force = false } = {}) {
