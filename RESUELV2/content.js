@@ -48,15 +48,14 @@ function init() {
 
   let activeIdentity = null;
   function loadIdentity(){
-    chrome.storage.local.get(['activeIdentityId','identities','proxyActive'], res => {
+    chrome.storage.local.get(['activeIdentityId','identities'], res => {
       const list = res.identities || [];
       const id = res.activeIdentityId;
       activeIdentity = list.find(i=>i.id===id) || null;
-      updateProxyIndicator(res.proxyActive);
     });
   }
   chrome.storage.onChanged.addListener((chg, area)=>{
-    if(area==='local' && (chg.activeIdentityId || chg.identities || chg.proxyActive)){
+    if(area==='local' && (chg.activeIdentityId || chg.identities)){
       loadIdentity();
     }
   });
@@ -129,11 +128,6 @@ function init() {
     }
   }
 
-  function updateProxyIndicator(active){
-    if(!STATE.bubble) return;
-    if(active) STATE.bubble.classList.add('proxy-on');
-    else STATE.bubble.classList.remove('proxy-on');
-  }
 
   function toggleIdentityPanel(){
     if(!activeIdentity){ showNotification('No active identity'); return; }
@@ -180,17 +174,30 @@ function init() {
   document.addEventListener('focusout', () => removeFieldIcon());
 
   function watchForms(){
+    let dismissed = false;
     const check = ()=>{
-      if(document.getElementById('zepra-helper-bar')) return;
-      const forms = Array.from(document.querySelectorAll('form')).filter(f=>f.querySelectorAll('input,textarea,select').length>=3);
-      if(forms.length){
+      if(dismissed || document.getElementById('zepra-helper-bar')) return;
+      const forms = Array.from(document.querySelectorAll('form'));
+      let target = null;
+      for(const f of forms){
+        const els = f.querySelectorAll('input,select');
+        let matches = 0;
+        for(const el of els){
+          if(detectField(el)){
+            matches++;
+            if(matches >= 3) break;
+          }
+        }
+        if(matches >= 3){ target = f; break; }
+      }
+      if(target){
         const bar=document.createElement('div');
         bar.id='zepra-helper-bar';
         bar.style.cssText='position:fixed;top:0;left:0;right:0;background:#111;color:#e2e8f0;padding:8px;z-index:2147483647;display:flex;justify-content:center;gap:10px;box-shadow:0 0 10px #39ff14;';
         bar.innerHTML=`<span>Zepra has detected a form. Would you like to fill it using your active identity?</span><button id="zepra-fill" style="background:#22c55e;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;">Fill Form</button><button id="zepra-dismiss" style="background:#dc2626;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;">Dismiss</button>`;
         document.body.prepend(bar);
-        bar.querySelector('#zepra-fill').addEventListener('click',()=>{ fillForm(forms[0]); bar.remove(); });
-        bar.querySelector('#zepra-dismiss').addEventListener('click',()=>bar.remove());
+        bar.querySelector('#zepra-fill').addEventListener('click',()=>{ fillForm(target); bar.remove(); dismissed = true; });
+        bar.querySelector('#zepra-dismiss').addEventListener('click',()=>{ bar.remove(); dismissed = true; });
       }
     };
     const mo=new MutationObserver(check);
@@ -253,11 +260,6 @@ function init() {
         box-shadow: 0 6px 30px rgba(57,255,20,0.6), 0 0 20px rgba(255,230,0,0.5) !important;
       }
 
-      #zepra-bubble.proxy-on {
-        box-shadow: 0 0 10px #00e0ff, 0 0 20px #00e0ff;
-        border-color: #00e0ff;
-      }
-      
       .bubble-icon {
         position: relative;
         width: 40px;
@@ -306,7 +308,6 @@ function init() {
       }
     });
 
-    chrome.storage.local.get('proxyActive', ({proxyActive})=>updateProxyIndicator(proxyActive));
 
     // Drag behaviour
     let drag = { active: false, moved: false, offsetX: 0, offsetY: 0 };
@@ -1285,8 +1286,10 @@ function init() {
     }, 3000);
   }
 
-  function createRainbowModal(selectedText, customPromptId = null) {
+  async function createRainbowModal(selectedText, customPromptId = null) {
     if (STATE.modal) return;
+
+    const { showReasoning = false } = await chrome.storage.local.get('showReasoning');
 
     const modal = document.createElement('div');
     modal.id = 'zepra-modal';
@@ -1298,14 +1301,29 @@ function init() {
         </div>
         <div class="modal-body">
           <div class="question-text">${selectedText}</div>
-          <div class="answer-container">
-            <div class="loading">Generating answer...</div>
+          <div class="answer-container${showReasoning ? ' split' : ''}">
+            <div class="loading"></div>
+            ${showReasoning ? `
+            <div class="split-pane" style="display:none;">
+              <div class="pane answer-pane">
+                <div class="pane-title">Answer</div>
+                <div class="answer-text"></div>
+                <button class="btn-copy-answer">Copy</button>
+              </div>
+              <div class="pane reason-pane">
+                <div class="pane-title">Reason</div>
+                <div class="reason-text"></div>
+                <button class="btn-copy-reason">Copy</button>
+              </div>
+            </div>
+            ` : `
             <div class="answer-text" style="display: none;"></div>
+            `}
           </div>
           <div class="modal-actions" style="display: none;">
             <button class="btn-write-here">Write Here</button>
             <button class="btn-write-all">Write All</button>
-            <button class="btn-copy">Copy</button>
+            ${showReasoning ? '' : '<button class="btn-copy">Copy</button>'}
             <button class="btn-humanizer">AI Humanizer</button>
             <button class="btn-use-prompt">Use Custom Prompt</button>
           </div>
@@ -1333,7 +1351,7 @@ function init() {
         from { opacity: 0; }
         to { opacity: 1; }
       }
-      
+
       @keyframes rainbowBorder {
         0% { border-color: #ff6b6b; box-shadow: 0 0 20px #ff6b6b; }
         16% { border-color: #4ecdc4; box-shadow: 0 0 20px #4ecdc4; }
@@ -1343,7 +1361,14 @@ function init() {
         80% { border-color: #ff9ff3; box-shadow: 0 0 20px #ff9ff3; }
         100% { border-color: #ff6b6b; box-shadow: 0 0 20px #ff6b6b; }
       }
-      
+
+      .answer-container.split .split-pane{display:flex;gap:10px;}
+      .answer-container.split .pane{flex:1;background:#1f1f1f;padding:10px;border-radius:6px;display:flex;flex-direction:column;}
+      .answer-container.split .pane-title{font-weight:bold;margin-bottom:6px;}
+      .answer-container.split .pane button{align-self:flex-end;margin-top:8px;}
+      .thinking-icon{display:inline-block;margin-right:6px;animation:pulse 1s infinite;}
+      @keyframes pulse{0%,100%{filter:drop-shadow(0 0 0 #39ff14);}50%{filter:drop-shadow(0 0 6px #39ff14);}}
+
       .modal-content {
         background: linear-gradient(135deg, #23272b 0%, #120f12 100%);
         border-radius: 15px;
@@ -1473,6 +1498,9 @@ function init() {
     document.body.appendChild(modal);
     STATE.modal = modal;
 
+    const loadEl = modal.querySelector('.loading');
+    await setLoadingMessage(loadEl);
+
     // Event listeners
     modal.querySelector('.modal-close').addEventListener('click', closeModal);
     modal.addEventListener('click', (e) => {
@@ -1480,12 +1508,15 @@ function init() {
     });
 
     // Generate answer
-    generateAnswer(selectedText, customPromptId);
+    generateAnswer(selectedText, customPromptId, showReasoning);
   }
 
-  async function generateAnswer(questionText, customPromptId = null) {
+  async function generateAnswer(questionText, customPromptId = null, forceReason = null) {
     try {
       const ctx = await getContext();
+      const { showReasoning = false, reasonLang = 'English', cerebrasModel } = await chrome.storage.local.get(['showReasoning','reasonLang','cerebrasModel']);
+      const useReason = forceReason !== null ? forceReason : showReasoning;
+      const thinking = isThinkingModel(cerebrasModel);
       let raw = '';
       let promptName = 'auto';
       if (customPromptId) {
@@ -1495,42 +1526,72 @@ function init() {
         promptName = resp.promptName || 'custom';
         await chrome.storage.local.set({ lastCustomPromptId: customPromptId });
       } else {
-        const prompt = buildPrompt('auto', questionText, ctx);
+        const prompt = buildPrompt('auto', questionText, ctx, { withReason: useReason, reasonLang, thinking });
         const response = await chrome.runtime.sendMessage({ type: 'CEREBRAS_GENERATE', prompt });
         if (!response?.ok) throw new Error(response?.error || 'Generation failed');
         raw = response.result;
       }
-      const parts = parseAnswers(raw);
-      const joined = parts.join('\n');
-      const answer = joined;
+      const parsed = parseResponse(raw, useReason);
+      let answer, reason;
+      if (useReason) {
+        answer = parsed.answer || '';
+        reason = parsed.reason || '';
+      } else {
+        const joined = parsed.join('\n');
+        answer = joined;
+      }
       STATE.currentAnswer = answer;
       await chrome.storage.local.set({ lastAnswer: answer });
 
       // Update modal
       const modal = STATE.modal;
       if (modal) {
-        modal.querySelector('.loading').style.display = 'none';
-        modal.querySelector('.answer-text').style.display = 'block';
-        modal.querySelector('.answer-text').textContent = answer;
-        modal.querySelector('.modal-actions').style.display = 'flex';
+        const loadEl = modal.querySelector('.loading');
+        loadEl.style.display = 'none';
+        if (useReason) {
+          const split = modal.querySelector('.split-pane');
+          split.style.display = 'flex';
+          modal.querySelector('.answer-pane .answer-text').textContent = answer;
+          modal.querySelector('.reason-pane .reason-text').textContent = reason;
+          modal.querySelector('.modal-actions').style.display = 'flex';
+          modal.querySelector('.btn-copy-answer').addEventListener('click', () => {
+            navigator.clipboard.writeText(answer);
+            showNotification('Answer copied to clipboard!');
+          });
+          modal.querySelector('.btn-copy-reason').addEventListener('click', () => {
+            navigator.clipboard.writeText(reason);
+            showNotification('Reason copied to clipboard!');
+          });
+        } else {
+          const ansEl = modal.querySelector('.answer-text');
+          ansEl.style.display = 'block';
+          ansEl.textContent = answer;
+          modal.querySelector('.modal-actions').style.display = 'flex';
+          modal.querySelector('.btn-copy').addEventListener('click', () => {
+            navigator.clipboard.writeText(answer);
+            showNotification('Answer copied to clipboard!');
+          });
+        }
 
-        // Add event listeners for buttons
         modal.querySelector('.btn-write-here').addEventListener('click', async () => {
           closeModal();
-          await typeAnswer(parts[0] || '');
+          if (useReason) {
+            await typeAnswer(answer);
+          } else {
+            await typeAnswer(parsed[0] || '');
+          }
         });
 
         modal.querySelector('.btn-write-all').addEventListener('click', async () => {
           closeModal();
-          for (const part of parts) {
-            await new Promise(r => setTimeout(r, 3000));
-            await typeAnswer(part, { skipCountdown: true });
+          if (useReason) {
+            await typeAnswer(answer, { skipCountdown: true });
+          } else {
+            for (const part of parsed) {
+              await new Promise(r => setTimeout(r, 3000));
+              await typeAnswer(part, { skipCountdown: true });
+            }
           }
-        });
-
-        modal.querySelector('.btn-copy').addEventListener('click', () => {
-          navigator.clipboard.writeText(answer);
-          showNotification('Answer copied to clipboard!');
         });
 
         modal.querySelector('.btn-humanizer').addEventListener('click', async () => {
@@ -1544,7 +1605,6 @@ function init() {
       }
 
       // Save context
-      // Save the specific prompt name for better context tracking.
       await saveContext({ q: questionText, a: answer, promptName });
 
     } catch (e) {
@@ -1587,7 +1647,7 @@ function init() {
       selectedId=null; render();
     });
     modal.querySelector('#prCancel').addEventListener('click',()=>modal.remove());
-    modal.querySelector('#prRun').addEventListener('click', () => {
+    modal.querySelector('#prRun').addEventListener('click', async () => {
       const pr = customPrompts.find(p=>p.id===selectedId);
       if(!pr){ showNotification('Select a prompt'); return; }
       modal.remove();
@@ -1595,8 +1655,10 @@ function init() {
         const loadEl = STATE.modal.querySelector('.loading');
         const ansEl = STATE.modal.querySelector('.answer-text');
         const act = STATE.modal.querySelector('.modal-actions');
-        loadEl.style.display='block'; loadEl.textContent='Generating answer...';
-        ansEl.style.display='none'; act.style.display='none';
+        loadEl.style.display='block';
+        await setLoadingMessage(loadEl);
+        ansEl && (ansEl.style.display='none');
+        act.style.display='none';
         // Reuse the main generation function for consistency and maintainability.
         generateAnswer(questionText, pr.id);
       }
@@ -1627,21 +1689,52 @@ function init() {
     }
   }
 
-  function parseAnswers(text){
+  function extractJSON(text){
     try {
-      const obj = JSON.parse(text);
-      if (Array.isArray(obj.answers)) {
-        return obj.answers.map(a => String(a).trim());
-      }
-    } catch(e) {
-      /* ignore */
+      const idx = text.lastIndexOf('{');
+      if (idx === -1) return null;
+      return JSON.parse(text.slice(idx));
+    } catch { return null; }
+  }
+
+  function parseResponse(text, withReason){
+    const obj = extractJSON(text);
+    if (withReason) {
+      return {
+        answer: String(obj?.answer || '').trim(),
+        reason: String(obj?.reason || '').trim()
+      };
+    }
+    if (obj && Array.isArray(obj.answers)) {
+      return obj.answers.map(a => String(a).trim());
     }
     return [text.trim()];
   }
 
-  function buildPrompt(mode, question, context) {
+  function isThinkingModel(model){
+    return /thinking/i.test(model || '');
+  }
+
+  async function setLoadingMessage(el){
+    const { cerebrasModel } = await chrome.storage.local.get('cerebrasModel');
+    if (isThinkingModel(cerebrasModel)) {
+      el.innerHTML = '<span class="thinking-icon">🧠</span><span>Thinking...</span>';
+    } else {
+      el.textContent = 'Generating answer...';
+    }
+  }
+
+  function buildPrompt(mode, question, context, opts = {}) {
+    const { withReason = false, reasonLang = 'English', thinking = false } = opts;
     const ctxLines = (context || []).map((c, i) => `Q${i + 1}: ${c.q}\nA${i + 1}: ${c.a}`).join('\n');
-    const rules = `You are building a consistent survey profile. Use prior context if helpful and choose answers that keep the participant qualified for the survey.\nSTRICT OUTPUT RULES:\n- Respond ONLY with JSON: {"answers": ["answer1", "answer2", ...]}.\n- Each element must correspond to the questions in order and remain consistent with previous answers.\n- Do not add any text outside the JSON.\n- Language: match the question language.`;
+    let rules = `You are building a consistent survey profile. Use prior context if helpful and choose answers that keep the participant qualified for the survey.\nSTRICT OUTPUT RULES:\n`;
+    if (withReason) {
+      rules += `- Final response MUST be JSON: {"answer": "", "reason": ""}. Reason must be in ${reasonLang}.\n`;
+    } else {
+      rules += `- Respond ONLY with JSON: {"answers": ["answer1", "answer2", ...]}.\n`;
+    }
+    if (thinking) rules += '- After any reasoning, end with the JSON object.\n';
+    rules += '- Language: match the question language.';
     const tasks = {
       open: 'Open-ended: write 1-3 short natural sentences.',
       mcq: 'Multiple Choice: return the EXACT option text from the provided question/options.',
@@ -1661,7 +1754,7 @@ function init() {
   async function saveContext(entry) {
     const list = await getContext();
     list.push(entry);
-    while (list.length > 50) list.shift();
+    while (list.length > 10) list.shift();
     await chrome.storage.local.set({ contextQA: list });
   }
 

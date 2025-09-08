@@ -12,7 +12,6 @@
     userEmail: document.getElementById('userEmail'),
     sessionTimer: document.getElementById('sessionTimer'),
     logoutBtn: document.getElementById('logoutBtn'),
-    proxyBar: document.getElementById('proxyBar'),
     navCustom: document.getElementById('navCustom'),
     navIdent: document.getElementById('navIdent'),
     navOptions: document.getElementById('navOptions'),
@@ -164,12 +163,24 @@ async function handleMode(mode){
     lastQuestion = questionText;
 
     const ctx   = await getContext();
-    const prompt= buildPrompt(mode, questionText, ctx);
+    const { cerebrasModel } = await chrome.storage.local.get('cerebrasModel');
+    const thinking = isThinkingModel(cerebrasModel);
+    if (thinking) {
+      els.status.innerHTML = '<span class="thinking-icon">🧠</span> Thinking...';
+    } else {
+      els.status.textContent = 'Generating answer...';
+    }
+    const prompt= buildPrompt(mode, questionText, ctx, thinking);
     const gen   = await chrome.runtime.sendMessage({ type:'CEREBRAS_GENERATE', prompt });
 
     if (!gen?.ok) throw new Error(gen?.error||'Generate failed');
 
-    const answer = postProcess(mode, gen.result);
+    let raw = gen.result;
+    if (thinking) {
+      const obj = extractJSON(raw);
+      if (obj && Array.isArray(obj.answers)) raw = obj.answers[0] || '';
+    }
+    const answer = postProcess(mode, raw);
     els.preview.value = answer;
 
       await chrome.storage.local.set({ lastAnswer: answer });
@@ -179,9 +190,15 @@ async function handleMode(mode){
   finally { setBusy(false); }
 }
 
-function buildPrompt(mode, question, context){
+function buildPrompt(mode, question, context, thinking){
   const ctxLines = (context||[]).map((c,i)=>`Q${i+1}: ${c.q}\nA${i+1}: ${c.a}`).join('\n');
-  const rules = `You are answering a survey question. Use prior context if helpful and choose answers that keep the participant qualified for the survey.\nSTRICT OUTPUT RULES:\n- Output ONLY the final answer; no extra words or punctuation unless part of the answer.\n- Language: match the question language.`;
+  let rules = `You are answering a survey question. Use prior context if helpful and choose answers that keep the participant qualified for the survey.\nSTRICT OUTPUT RULES:\n`;
+  if (thinking) {
+    rules += '- After any reasoning, output ONLY the final JSON object: {"answers": ["answer"]}.\n';
+  } else {
+    rules += '- Output ONLY the final answer; no extra words or punctuation unless part of the answer.\n';
+  }
+  rules += '- Language: match the question language.';
   const tasks = {
     open: 'Open-ended: write 1-3 short natural sentences.',
     mcq: 'Multiple Choice: return the EXACT option text from the provided question/options.',
@@ -201,6 +218,19 @@ function postProcess(mode, t){
   return s;
 }
 
+function extractJSON(text){
+  try {
+    const idx = text.lastIndexOf('{');
+    if (idx === -1) return null;
+    const json = text.slice(idx);
+    return JSON.parse(json);
+  } catch { return null; }
+}
+
+function isThinkingModel(model){
+  return /thinking/i.test(model || '');
+}
+
 async function runCustomPrompt(pr){
   if(!pr) return;
   if(!lastQuestion){
@@ -211,10 +241,23 @@ async function runCustomPrompt(pr){
   }
   setBusy(true); notify('');
   try {
-    const fullPrompt = pr.text + '\n\n' + lastQuestion;
+    const { cerebrasModel } = await chrome.storage.local.get('cerebrasModel');
+    const thinking = isThinkingModel(cerebrasModel);
+    if (thinking) {
+      els.status.innerHTML = '<span class="thinking-icon">🧠</span> Thinking...';
+    } else {
+      els.status.textContent = 'Generating answer...';
+    }
+    let fullPrompt = pr.text + '\n\n' + lastQuestion;
+    if (thinking) fullPrompt += '\nRespond with a final JSON object: {"answers": ["..."]}.';
     const gen = await chrome.runtime.sendMessage({ type:'CEREBRAS_GENERATE', prompt: fullPrompt });
     if (!gen?.ok) throw new Error(gen?.error||'Generate failed');
-    const answer = gen.result.trim();
+    let raw = gen.result;
+    if (thinking) {
+      const obj = extractJSON(raw);
+      raw = obj && Array.isArray(obj.answers) ? obj.answers[0] || '' : raw;
+    }
+    const answer = raw.trim();
     els.preview.value = answer;
     await chrome.storage.local.set({ lastAnswer: answer, lastCustomPromptId: pr.id });
     await saveContext({ q: lastQuestion, a: answer, promptName: pr.name });
@@ -227,7 +270,7 @@ async function getActiveTab(){ const tabs = await chrome.tabs.query({active:true
 async function ensureContentScript(tabId){ try{ await chrome.tabs.sendMessage(tabId,{type:'PING'});}catch{ await chrome.scripting.executeScript({target:{tabId}, files:['content.js']}); await chrome.tabs.sendMessage(tabId,{type:'PING'});} }
 async function getSelectedOrDomText(tabId){ const r = await chrome.tabs.sendMessage(tabId,{type:'GET_SELECTED_OR_DOM_TEXT'}); return r?.ok? r.text: ''; }
 async function getContext(){ const o = await chrome.storage.local.get('contextQA'); return o.contextQA||[]; }
-async function saveContext(entry){ const list = await getContext(); list.push(entry); while(list.length>50) list.shift(); await chrome.storage.local.set({contextQA:list}); }
+async function saveContext(entry){ const list = await getContext(); list.push(entry); while(list.length>10) list.shift(); await chrome.storage.local.set({contextQA:list}); }
 
 function notify(msg,isErr=false){ els.status.textContent = msg; els.status.className = 'status' + (isErr?' error':''); }
 function setBusy(on){ document.body.style.opacity = on? '0.8':'1'; }
@@ -355,19 +398,4 @@ async function loadIP(){
 
 (async function init(){
   loadIP();
-  updateProxyBar();
 })();
-
-function updateProxyBar(){
-  chrome.storage.local.get(['proxyActive','proxyInfo'], ({proxyActive, proxyInfo})=>{
-    if(!els.proxyBar) return;
-    if(proxyActive && proxyInfo){
-      els.proxyBar.textContent = `IP: ${proxyInfo.ip} | 📍 ${proxyInfo.city}, ${proxyInfo.country}`;
-      els.proxyBar.classList.add('active');
-    } else {
-      els.proxyBar.textContent = 'Proxy: Off';
-      els.proxyBar.classList.remove('active');
-    }
-  });
-}
-chrome.storage.onChanged.addListener(chg=>{ if(chg.proxyActive || chg.proxyInfo) updateProxyBar(); });

@@ -35,10 +35,7 @@
     "clipboardRead",
     "clipboardWrite",
     "browsingData",
-    "history",
-    "proxy",
-    "webRequest",
-    "webRequestAuthProvider"
+    "history"
   ],
   "web_accessible_resources": [{
     "resources": ["icons/*"],
