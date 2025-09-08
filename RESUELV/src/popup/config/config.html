@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Configuración Resuelv+</title>
+  <link rel="stylesheet" href="config.css">
+</head>
+
+<body>
+  <div class="config-header">
+    <div class="config-title">⚙️ <span data-i18n="configuracion">Configuración</span></div>
+    <button id="closeConfigModal" class="close-modal-btn" title="Cerrar">×</button>
+  </div>
+  <div id="configOptions">
+    <div class="config-option">
+      <span class="option-icon">👀</span>
+      <div class="option-info">
+        <div class="option-title">Panel Jump</div>
+        <div class="option-desc" data-i18n="mostrar-ocultar-acceso-rapido">Mostrar/Ocultar acceso rápido</div>
+      </div>
+      <button id="togglePanelJump" class="toggle-btn" aria-pressed="false"><span class="toggle-switch"></span></button>
+    </div>
+    <div class="config-option">
+      <span class="option-icon">🔥</span>
+      <div class="option-info">
+        <div class="option-title">Extras Prime</div>
+        <div class="option-desc" data-i18n="mostrar-ocultar-extras-para-encuestas-prime">Mostrar/Ocultar extras para
+          encuestas Prime</div>
+      </div>
+      <button id="togglePrimeExtras" class="toggle-btn" aria-pressed="false"><span
+          class="toggle-switch"></span></button>
+    </div>
+    <div class="config-option">
+      <span class="option-icon">🔔</span>
+      <div class="option-info">
+        <div class="option-title" data-i18n="notificaciones-cambio-de-ip">Notificaciones Cambio de IP</div>
+        <div class="option-desc" data-i18n="activar-desactivar-notificaciones-cambio-de-ip">Activar/Desactivar
+          Notificaciones Cambio de IP</div>
+      </div>
+      <button id="toggleNotifIP" class="toggle-btn" aria-pressed="false"><span class="toggle-switch"></span></button>
+    </div>
+    <div class="config-option">
+      <span class="option-icon">✍️</span>
+      <div class="option-info">
+        <div class="option-title">Pegar Simulado</div>
+        <div class="option-desc" data-i18n="activar-desactivar-pegado-simulado">Activar/Desactivar pegado simulado
+          humano</div>
+      </div>
+      <button id="togglePasteHuman" class="toggle-btn" aria-pressed="false"><span class="toggle-switch"></span></button>
+    </div>
+    <div class="config-actions">
+      <div class="option-desc" data-i18n="encuestas-prime">Encuestas Prime</div>
+      <div class="config-actions-btns">
+        <button id="btnCargarLista" title="Cargar Lista" class="action-btn cargar">📝</button>
+        <button id="btnBorrarLista" title="Borrar Lista" class="action-btn borrar">🗑️</button>
+      </div>
+    </div>
+    <div class="config-actions">
+      <div class="option-desc">UserAgent</div>
+      <div class="config-actions-btns">
+        <button id="btnAplicarUA" title="Aplicar UserAgent" class="action-btn cargar">📱</button>
+        <button id="btnRestablecerUA" title="Restablecer UserAgent" class="action-btn borrar">♻️</button>
+      </div>
+    </div>
+    <div class="config-actions">
+      <div class="option-desc">Prompt IA</div>
+      <div class="config-actions-btns">
+        <button id="btnVerPromptIA" title="Ver Prompt IA" class="action-btn cargar">👁️</button>
+        <button id="btnEstablecerPromptIA" title="Establecer Prompt IA" class="action-btn cargar">✏️</button>
+      </div>
+    </div>
+
+
+    <!-- Modal para ver el Prompt IA -->
+    <div id="modalVerPromptIA" class="modal-ia" style="display:none;">
+      <div class="modal-ia-content">
+        <div class="modal-ia-header">
+          <span data-i18n="prompt-ia-actual">Prompt IA actual</span>
+          <button class="close-modal-ia" data-close="modalVerPromptIA">&times;</button>
+        </div>
+        <pre id="textoPromptIA" class="modal-ia-pre"></pre>
+      </div>
+    </div>
+
+    <!-- Modal para editar el Prompt IA -->
+    <div id="modalEditarPromptIA" class="modal-ia" style="display:none;">
+      <div class="modal-ia-content">
+        <div class="modal-ia-header">
+          <span data-i18n="editar-prompt-ia">Editar Prompt IA</span>
+          <button class="close-modal-ia" data-close="modalEditarPromptIA">&times;</button>
+        </div>
+        <textarea id="inputPromptIA" class="modal-ia-textarea" rows="8"
+          placeholder="Escribe tu prompt aquí..."></textarea>
+        <div class="modal-ia-footer">
+          <button id="guardarPromptIA" class="modal-ia-btn" data-i18n="guardar">Guardar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- Modal para cargar lista se genera dinámicamente -->
+  <script src="../../locales/i18n.js"></script>
+  <script src="config.js"></script>
+</body>
+
+</html>
