@@ -352,6 +352,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true; // async
 });
 
+chrome.commands?.onCommand.addListener((command) => {
+  if (command === 'open-proxy-menu') {
+    chrome.tabs.create({ url: chrome.runtime.getURL('src/proxy/proxy_menu.html') });
+  }
+});
+
 let usageListener = null;
 function startUsageMonitor() {
   usageListener = (details) => {
