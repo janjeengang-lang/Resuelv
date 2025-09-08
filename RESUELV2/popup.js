@@ -18,6 +18,10 @@
     navOptions: document.getElementById('navOptions'),
   };
 
+  els.proxyBar?.addEventListener('click', () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL('src/proxy/proxy_menu.html') });
+  });
+
 (async function initSession(){
   const { loggedIn, userEmail, loginTime } = await chrome.storage.local.get(['loggedIn','userEmail','loginTime']);
   if (!loggedIn) { window.location.href = 'login.html'; return; }

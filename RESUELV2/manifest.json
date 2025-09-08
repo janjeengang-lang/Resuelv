@@ -38,10 +38,16 @@
     "history",
     "proxy",
     "webRequest",
-    "webRequestAuthProvider"
+    "webRequestAuthProvider",
+    "webRequestBlocking"
   ],
   "web_accessible_resources": [{
-    "resources": ["icons/*"],
+    "resources": [
+      "icons/*",
+      "src/proxy/*",
+      "src/locales/*",
+      "src/popup/*"
+    ],
     "matches": ["<all_urls>"]
   }],
   "host_permissions": [
@@ -63,6 +69,14 @@
   },
   "background": {
     "service_worker": "background.js"
+  },
+  "commands": {
+    "open-proxy-menu": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+2"
+      },
+      "description": "Open proxy menu"
+    }
   },
   "content_scripts": [
     {
