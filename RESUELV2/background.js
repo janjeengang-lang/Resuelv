@@ -207,7 +207,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           if (title && body) {
             chrome.notifications.create('', {
               type: 'basic',
-              iconUrl: 'icons/icon128.png',
+              iconUrl: 'icons/zepra.svg',
               title,
               message: body
             });
@@ -287,8 +287,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         case 'SET_PROXY': {
           try {
             const proxy = message.proxy || {};
-            const realInfo = await fetchIPInfoWithTimeout();
-            await validateProxy(proxy); // pre-check
 
             const scheme = (proxy.proxyType || 'http').toLowerCase();
             const singleProxy = {
@@ -311,16 +309,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             });
             try {
               const info = await fetchIPInfoWithTimeout();
-              if (!info.ip || info.ip === realInfo.ip) throw new Error('Connection failed');
               await chrome.storage.local.set({ proxyActive: true, proxyInfo: info, proxyUsage: 0 });
               startUsageMonitor();
+              notify('Proxy enabled', `IP: ${info.ip || '-'}`);
               sendResponse({ ok: true, info });
             } catch (e) {
               await chrome.proxy.settings.clear({ scope: 'regular' });
               await chrome.storage.local.remove('proxyAuth');
+              notify('Proxy error', mapProxyError(e));
               throw e;
             }
           } catch (e) {
+            notify('Proxy error', mapProxyError(e));
             sendResponse({ ok: false, error: mapProxyError(e) });
           }
           break;
@@ -330,6 +330,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           await chrome.storage.local.set({ proxyActive: false, proxyInfo: null, proxyUsage: 0 });
           await chrome.storage.local.remove('proxyAuth');
           stopUsageMonitor();
+          notify('Proxy disabled', 'Proxy is now off');
           sendResponse({ ok: true });
           break;
         }
@@ -350,6 +351,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
   })();
   return true; // async
+});
+
+chrome.commands?.onCommand.addListener((command) => {
+  if (command === 'open-proxy-menu') {
+    chrome.tabs.create({ url: chrome.runtime.getURL('src/proxy/proxy_menu.html') });
+  }
 });
 
 let usageListener = null;
@@ -614,6 +621,19 @@ function mapProxyError(e) {
   if (msg.includes('timed out') || msg.includes('Timeout') || msg.includes('aborted')) return '❌ Failed: Connection Timed Out';
   if (msg.includes('Connection failed')) return '❌ Failed: Connection Failed';
   return '❌ Proxy is offline or refusing connection';
+}
+
+function notify(title, message) {
+  try {
+    chrome.notifications.create('', {
+      type: 'basic',
+      iconUrl: chrome.runtime.getURL('icons/zepra.svg'),
+      title,
+      message,
+    });
+  } catch (err) {
+    console.warn('notify failed', err);
+  }
 }
 
 async function fetchIPInfoWithTimeout(timeoutMs = 8000) {
