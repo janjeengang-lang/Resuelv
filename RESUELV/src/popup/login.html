@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Iniciar Sesión</title>
+  <link rel="icon" type="image/png" sizes="128x128" href="../../icons/icon128.png">
+  <style>
+    body {
+      min-height: 100vh;
+      margin: 0;
+      padding: 0;
+      background: linear-gradient(135deg, #23272b 60%, #ff9800 100%);
+      font-family: 'Montserrat', Arial, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .login-card {
+      background: #23272b;
+      border-radius: 14px;
+      box-shadow: 0 4px 24px #000a, 0 1.5px 8px #ff980033;
+      padding: 32px 28px 22px 28px;
+      min-width: 320px;
+      max-width: 350px;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      border: 1px solid #292d33;
+      gap: 14px;
+      animation: fadein 0.7s;
+    }
+
+    @keyframes fadein {
+      from {
+        opacity: 0;
+        transform: translateY(30px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .login-title {
+      text-align: center;
+      font-family: 'Montserrat', Arial, sans-serif;
+      color: #ff9800;
+      letter-spacing: 1px;
+      font-size: 1.6rem;
+      font-weight: bold;
+      margin-bottom: 10px;
+      text-shadow: 0 2px 8px #181c20cc;
+    }
+
+    .login-subtitle {
+      text-align: center;
+      color: #bdbdbd;
+      font-size: 1.01rem;
+      margin-bottom: 18px;
+      font-weight: 500;
+    }
+
+    .login-input {
+      width: 100%;
+      margin-bottom: 10px;
+      border-radius: 6px;
+      border: 1.5px solid #444;
+      background: #181c20;
+      color: #fff;
+      padding: 10px 12px;
+      font-size: 1.08rem;
+      outline: none;
+      transition: border 0.2s;
+      font-family: inherit;
+    }
+
+    .login-input:focus {
+      border: 1.5px solid #ff9800;
+      background: #23272b;
+    }
+
+    .login-btn,
+    .reset-btn {
+      width: 100%;
+      border: none;
+      border-radius: 7px;
+      padding: 12px 0;
+      font-size: 1.08rem;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+      margin-bottom: 8px;
+      box-shadow: 0 1px 6px #ff980033;
+      font-family: inherit;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .login-btn {
+      background: linear-gradient(90deg, #ff9800 80%, #ffd600 100%);
+      color: #23272b;
+    }
+
+    .login-btn:hover {
+      background: linear-gradient(90deg, #ffa726 80%, #ffd600 100%);
+      color: #fff;
+    }
+
+    .reset-btn {
+      background: #292d33;
+      color: #ff9800;
+      border: 1.5px solid #ff9800;
+      margin-bottom: 0;
+    }
+
+    .reset-btn:hover {
+      background: #ff9800;
+      color: #23272b;
+    }
+
+    #alerta {
+      color: #ff1744;
+      margin-top: 8px;
+      font-size: 1.01em;
+      text-align: center;
+      min-height: 22px;
+      font-weight: 600;
+      letter-spacing: 0.2px;
+      transition: color 0.2s;
+    }
+
+    #logo-dinamico {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 120px;
+      height: 120px;
+      margin: 0 auto -18px auto;
+      /* Centrado y superpuesto (ajusta -28px según lo que desees) */
+      padding: 0;
+      z-index: 2;
+      position: relative;
+    }
+
+    #logo-dinamico video {
+      width: 120px;
+      height: 120px;
+      display: block;
+      margin: 0;
+      padding: 0;
+    }
+
+
+    label[for="recuerdame"],
+    #recuerdame-label {
+      color: #fff;
+    }
+  </style>
+</head>
+
+<body>
+
+
+  <div class="login-card">
+    <div id="logo-dinamico"></div>
+
+    <div class="login-subtitle" data-i18n="accede-a-tu-cuenta-para-continuar">accede-a-tu-cuenta-para-continuar</div>
+    <input id="user" class="login-input" type="text" placeholder="Usuario">
+    <input id="pass" class="login-input" type="password" placeholder="Contraseña">
+    <label id="recuerdame-label">
+      <input type="checkbox" id="recuerdame" >
+     <span data-i18n="recuerdame"> recuerdame</span>
+    </label>
+    <button id="btnEntrar" class="login-btn"  data-i18n="entrar">entrar</button>
+    <button id="btnResetConexiones" class="reset-btn"  data-i18n="cerrar-sesiones-abiertas">cerrar-sesiones-abiertas</button>
+    <div id="alerta"></div>
+  </div>
+  <script src="../locales/i18n.js"></script>
+  <script src="login.js"></script>
+</body>
+
+</html>

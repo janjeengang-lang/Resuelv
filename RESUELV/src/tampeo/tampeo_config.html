@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Configurar Tampeo</title>
+    <style>
+        :root {
+            --primary: #ff9800;
+            --primary-light: #ffa726;
+            --bg: #23272b;
+            --bg-dark: #181c20;
+            --text: #fff;
+            --text-muted: #bdbdbd;
+            --border: #444;
+            --radius: 10px;
+            --transition: 0.2s;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Segoe UI', Arial, sans-serif;
+            padding: 10px 0 0 0;
+            min-width: 350px;
+            min-height: 340px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .container {
+            background: var(--bg-dark);
+            border-radius: var(--radius);
+            box-shadow: 0 4px 24px 0 rgba(0, 0, 0, 0.25);
+            padding: 28px 28px 20px 28px;
+            width: 100%;
+            max-width: 400px;
+            display: flex;
+            flex-direction: column;
+            gap: 22px;
+        }
+
+        h2 {
+            text-align: center;
+            font-weight: 700;
+            letter-spacing: 1px;
+            margin-bottom: 1px;
+            margin-top: 1px;
+            color: var(--primary);
+        }
+
+        .radio-group {
+            display: flex;
+            gap: 18px;
+            justify-content: center;
+            margin-bottom: 0;
+        }
+
+        .radio-option {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            background: #22252a;
+            padding: 8px 16px;
+            border-radius: 7px;
+            transition: background var(--transition), border var(--transition);
+            cursor: pointer;
+            border: 2px solid transparent;
+            font-weight: 500;
+        }
+
+        .radio-option input[type="radio"] {
+            accent-color: var(--primary);
+            width: 18px;
+            height: 18px;
+            margin: 0;
+        }
+
+        .radio-option.selected {
+            background: #2d3137;
+            border-color: var(--primary);
+        }
+
+        .desc {
+            color: var(--text-muted);
+            font-size: 0.87em;
+            margin-bottom: 0;
+            text-align: justify;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 100px;
+            border-radius: 7px;
+            border: 1.5px solid var(--border);
+            background: #23272b;
+            color: var(--text);
+            padding: 5px;
+            font-size: 1em;
+            resize: vertical;
+            transition: border var(--transition);
+        }
+
+        textarea:focus {
+            border-color: var(--primary);
+            outline: none;
+        }
+
+        .btn {
+            background: var(--primary);
+            color: var(--bg);
+            border: none;
+            border-radius: 7px;
+            padding: 12px 0;
+            font-weight: 700;
+            font-size: 1.07em;
+            cursor: pointer;
+            transition: background var(--transition), color var(--transition);
+            margin-top: 8px;
+            letter-spacing: 0.5px;
+        }
+
+        .btn:hover,
+        .btn:focus {
+            background: var(--primary-light);
+            color: var(--text);
+        }
+
+        @media (max-width: 430px) {
+            .container {
+                padding: 16px 6px 12px 6px;
+                max-width: 98vw;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h2>Configurar Tampeo</h2>
+        <div class="radio-group">
+            <label class="radio-option" id="labelTodo">
+                <input type="radio" name="tampeoModo" id="tampearTodo" value="todo">
+                Tampear TODO
+            </label>
+            <label class="radio-option" id="labelPalabras">
+                <input type="radio" name="tampeoModo" id="tampearPalabras" value="palabras">
+                Solo por palabras
+            </label>
+        </div>
+
+        <textarea id="palabrasTampeo" rows="10" placeholder="Ejemplo:&#10;facebook&#10;survey&#10;oferta"></textarea>
+        <div class="desc">
+            <span>Si eliges "Solo por palabras", ingresa una palabra por línea.<br><br>
+                Las URLs que contengan alguna de esas palabras serán tampeadas.</span>
+        </div>
+        <button class="btn" id="guardarTampeoBtn">Aplicar y Guardar</button>
+    </div>
+    <script>
+        // Dinámica visual para radios
+        function updateRadioStyles() {
+            document.getElementById('labelTodo').classList.toggle('selected', document.getElementById('tampearTodo').checked);
+            document.getElementById('labelPalabras').classList.toggle('selected', document.getElementById('tampearPalabras').checked);
+        }
+        document.getElementById('tampearTodo').addEventListener('change', updateRadioStyles);
+        document.getElementById('tampearPalabras').addEventListener('change', updateRadioStyles);
+        window.addEventListener('DOMContentLoaded', updateRadioStyles);
+    </script>
+    <script src="tampeo_config.js"></script>
+</body>
+
+</html>

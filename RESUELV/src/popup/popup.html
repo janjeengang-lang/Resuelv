@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Registro de Conexiones</title>
+    <link rel="stylesheet" href="popup.css">
+    <style>
+        body,
+        .titulo-Resuelv {
+            font-family: 'Montserrat', Arial, sans-serif;
+        }
+
+        .icon {
+            vertical-align: middle;
+            display: inline-block;
+        }
+
+        /* Elimina los ::before de FontAwesome para username, rol y fechavencimiento */
+        #username::before,
+        #rol::before,
+        #fechavencimiento::before {
+            content: none !important;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="app" class="popup-card">
+        <!-- Logo principal -->
+        <div id="logo-dinamico"></div>
+        <!-- USUARIO -->
+        <div id="userCard" class="user-card">
+            <div id="username" class="user-row"></div>
+            <div id="rol" class="user-row"></div>
+            <div id="fechavencimiento" class="user-row"></div>
+        </div>
+        <div class="separator"></div>
+        <!-- BOTONES PRINCIPALES -->
+        <div class="main-btns-grid">
+            <button id="abrirRegistroBtn" class="icon-btn" title="Registro de historial completo">
+                <span class="icon-btn-icon">🗂️</span>
+                <span class="icon-btn-label" data-i18n="historial">Historial</span>
+            </button>
+            <button id="abrirProxyMenuBtn" class="icon-btn" title="Menú de Proxy">
+                <span class="icon-btn-icon">🌐</span>
+                <span class="icon-btn-label">Proxy</span>
+            </button>
+            <button id="abrirBuscadorJump" class="icon-btn" title="Buscador Jump">
+                <span class="icon-btn-icon">⚡️</span>
+                <span class="icon-btn-label">Jumps</span>
+            </button>
+            <!-- Nuevo botón SMS+ -->
+            <button id="abrirSMSplusBtn" class="icon-btn" title="SMS Plus">
+                <span class="icon-btn-icon">📲</span>
+                <span class="icon-btn-label">SMS+</span>
+            </button>
+            <!-- Nuevo botón Extra -->
+            <button id="abrirExtraBtn" class="icon-btn" title="Extras">
+                <span class="icon-btn-icon">✨</span>
+                <span class="icon-btn-label">Extras</span>
+            </button>
+        </div>
+        <div class="separator"></div>
+        <!-- TOGGLES agrupados en una card moderna -->
+        <div class="toggles-card">
+            <div id="estadoCaptura" class="estado-captura toggles-row" style="display:none;">
+                <!-- Toggle y estado se actualizan por JS -->
+            </div>
+            <div class="toggles-separator" style="display:none;"></div>
+            <div id="tampeoControles" class="toggles-row">
+                <button id="toggleTampeoBtn" class="toggle-btn off" title="Activar/Desactivar Tampeo"
+                    style="padding:0;border:none;background:none;">
+                    <!-- Toggle Off SVG grande -->
+                    <svg class="icon" viewBox="0 0 576 512" width="44" height="44">
+                        <rect x="96" y="192" width="384" height="128" rx="64" fill="#ccc" />
+                        <circle cx="160" cy="256" r="64" fill="#888" />
+                    </svg>
+                </button>
+                <span class="estado-text" id="tampeoEstadoText">
+                    Tampeo: <span class="off" id="tampeoEstado">Desactivado</span>
+                </span>
+                <button id="configTampeoBtn" class="toggle-captura-btn" title="Configurar Tampeo"
+                    style="margin-left:6px;">⚙️
+                </button>
+            </div>
+        </div>
+
+        <!-- INFO IP COMPACTA -->
+        <div id="ipInfoBox"
+            style="display:flex;flex-direction:column;align-items:stretch;gap:2px;margin:6px 0 2px 0;padding:4px 10px 4px 10px;background:rgba(30,32,36,0.92);border-radius:8px;font-size:0.93em;color:#b4c8ff;min-height:24px;">
+            <div id="ipInfoText"
+                style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:0.93em;display:flex;align-items:center;gap:6px;justify-content:flex-start;"
+                title="IP: 111.111.111.111 Estado:  ZIP: 12345">
+                IP: <span id="ipInfoIP" style="font-weight:600;color:#cdcbc1;font-size:1.25em;">...</span>
+                <span id="ipInfoRegion" style="margin-left:8px;">📍: <span
+                        style="font-weight:600; color:#cdcbc1;font-size:1.2em;" id="ipInfoEstado">...</span></span>
+                <span id="ipInfoCiudad" style="margin-left:8px;"><span
+                        style="font-weight:600; color:#cdcbc1;font-size:1.1em;" id="ipInfoCiudadValor">...</span></span>
+                <span id="ipInfoZip" style="margin-left:8px;"><span
+                        style="font-weight:600; color:#cdcbc1;font-size:1.2em;" id="ipInfoZIP">...</span></span>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:2px;">
+                <button id="ipRefreshBtn" title="Actualizar IP"
+                    style="background:none;border:none;cursor:pointer;font-size:1.2em;padding:1px 3px;color:#FFD600;line-height:1;">
+                    🔄
+                </button>
+                <span id="ipInfoFlag" style="font-size:2.0em;line-height:1;"></span>
+                <span id="ipInfoISP" style="font-size:0.98em;color:#b4c8ff;opacity:0.85;margin-left:6px;"></span>
+                <button id="btnAddFavorite" title="Añadir a Favoritos"
+                    style="margin-left:8px;display:inline-flex;align-items:center;gap:4px;background:#23272b;border:none;border-radius:7px;padding:4px 10px;color:#FFD600;font-weight:600;cursor:pointer;font-size:0.93em;box-shadow:0 1px 4px #0002;transition:background 0.15s;">
+                    ⭐️
+                </button>
+            </div>
+            <div style="font-size: 0.97em; color: #FFD600; text-align: center;">
+                <span data-i18n="zona-horaria-ip">Zona Horaria IP:</span>
+                <span id="ipInfoTimezone" style="color:#b4c8ff;">...</span>
+            </div>
+        </div>
+        <div id="ipScoreBox" style="margin: 6px 0 0 0; font-size: 1.02em; color: #FFD600; text-align: center;">
+
+        </div>
+
+        <!-- CERRAR SESSION -->
+        <button id="btnSignOut" class="logout-btn">
+            <!-- Logout SVG -->
+            <svg class="icon" viewBox="0 0 512 512" width="22" height="22">
+                <path
+                    d="M502.6 273l-96 96c-9.4 9.4-24.6 9.4-33.9 0s-9.4-24.6 0-33.9l54.1-54.1H192c-13.3 0-24-10.7-24-24s10.7-24 24-24h234.7l-54.1-54.1c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0l96 96c9.4 9.4 9.4 24.6 0 33.9z" />
+                <path
+                    d="M432 32H80c-26.5 0-48 21.5-48 48v352c0 26.5 21.5 48 48 48h352c26.5 0 48-21.5 48-48v-80c0-13.3-10.7-24-24-24s-24 10.7-24 24v80c0 0-0.1 0-0.1 0H80c0 0-0.1 0-0.1 0V80c0 0 0-0.1 0-0.1h352c0 0 0-0.1 0-0.1v80c0 13.3 10.7 24 24 24s24-10.7 24-24v-80c0-26.5-21.5-48-48-48z" />
+            </svg>
+            <span data-i18n="cerrar-sesion">Cerrar sesión</span>
+        </button>
+    </div>
+    <script src="../locales/i18n.js"></script>
+    <script src="popup.js"></script>
+</body>
+
+</html>
