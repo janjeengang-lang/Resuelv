@@ -1,13 +1,102 @@
 // background.js (MV3 service worker)
-// - OpenRouter chat completions
+// - Cerebras chat completions
 // - OCR via OCR.space
 // - Public IP via ipdata with fallback services
 
 const DEFAULTS = {
-  openrouterModel: 'google/gemini-2.0-flash-exp:free',
+  cerebrasModel: 'gpt-oss-120b',
   typingSpeed: 'normal', // fast | normal | slow
   ocrLang: 'eng',
 };
+
+// IP info services used to validate proxies. We iterate these in order
+// until one responds successfully to avoid single-endpoint failures.
+const TEST_APIS = [
+  'https://api.ipify.org?format=json',
+  'https://ipinfo.io/json',
+  'https://ifconfig.me/ip',
+];
+
+const SESSION_DURATION = 3 * 60 * 60 * 1000; // 3 hours
+
+// Supply credentials to authenticated proxies. Credentials are retrieved
+// from storage each time so a service worker restart does not lose them.
+chrome.webRequest.onAuthRequired.addListener(
+  async (details) => {
+    if (details.isProxy) {
+      const { proxyAuth } = await chrome.storage.local.get('proxyAuth');
+      console.log('onAuthRequired triggered', details.challenger, proxyAuth);
+      if (proxyAuth?.username) {
+        return {
+          authCredentials: {
+            username: proxyAuth.username,
+            password: proxyAuth.password,
+          },
+        };
+      }
+    }
+    console.log('onAuthRequired: no credentials supplied');
+    return {};
+  },
+  { urls: ['<all_urls>'] },
+  ['blocking']
+);
+
+
+async function forceLogout(reason = 'Your session has expired. Please log in again.') {
+  await chrome.storage.local.remove(['loggedIn', 'loginTime', 'userEmail', 'idToken', 'refreshToken', 'lastAuthCheck']);
+  await chrome.storage.local.set({ logoutMsg: reason });
+  updatePopup();
+  updateContextMenu();
+}
+
+async function checkSession() {
+  const { loggedIn, loginTime } = await chrome.storage.local.get(['loggedIn', 'loginTime']);
+  if (!loggedIn || !loginTime) {
+    await forceLogout();
+    return { ok: false };
+  }
+  const remaining = SESSION_DURATION - (Date.now() - loginTime);
+  if (remaining <= 0) {
+    await forceLogout();
+    return { ok: false };
+  }
+  return { ok: true, remaining };
+}
+
+async function updatePopup() {
+  const { loggedIn } = await chrome.storage.local.get('loggedIn');
+  const popup = loggedIn ? 'popup.html' : 'login.html';
+  await chrome.action.setPopup({ popup });
+}
+
+async function updateContextMenu() {
+  const { loggedIn } = await chrome.storage.local.get('loggedIn');
+  await chrome.contextMenus.removeAll();
+  if (loggedIn) {
+    chrome.contextMenus.create({
+      id: 'sendToZepra',
+      title: 'Send to Zepra',
+      contexts: ['selection'],
+      documentUrlPatterns: ['<all_urls>']
+    });
+  }
+}
+
+updatePopup();
+updateContextMenu();
+checkSession();
+chrome.runtime.onStartup.addListener(() => {
+  updatePopup();
+  updateContextMenu();
+  checkSession();
+});
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes.loggedIn) {
+    updatePopup();
+    updateContextMenu();
+  }
+});
 
 chrome.runtime.onInstalled.addListener(async () => {
   try {
@@ -15,22 +104,16 @@ chrome.runtime.onInstalled.addListener(async () => {
     const toSet = {};
     for (const [k, v] of Object.entries(DEFAULTS)) if (cur[k] === undefined) toSet[k] = v;
     if (Object.keys(toSet).length) await chrome.storage.local.set(toSet);
-    
-    // Create context menu
-    await chrome.contextMenus.removeAll();
-    chrome.contextMenus.create({
-      id: 'sendToResuelv',
-      title: 'Send to Resuelv',
-      contexts: ['selection'],
-      documentUrlPatterns: ['<all_urls>']
-    });
   } catch (e) {
     console.error('Error initializing defaults:', e);
   }
+  updatePopup();
+  updateContextMenu();
+  checkSession();
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  if (info.menuItemId === 'sendToResuelv' && info.selectionText) {
+  if (info.menuItemId === 'sendToZepra' && info.selectionText) {
     try {
       // Ensure content script is injected
       await chrome.scripting.executeScript({
@@ -42,7 +125,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       setTimeout(async () => {
         try {
           await chrome.tabs.sendMessage(tab.id, {
-            type: 'SHOW_RESUELV_MODAL',
+            type: 'SHOW_ZEPRA_MODAL',
             text: info.selectionText
           });
         } catch (e) {
@@ -59,8 +142,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     try {
       switch (message.type) {
-        case 'GEMINI_GENERATE': {
-          const result = await callOpenRouter(message.prompt);
+        case 'CEREBRAS_GENERATE': {
+          const result = await callCerebras(message.prompt);
           sendResponse({ ok: true, result });
           break;
         }
@@ -89,9 +172,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse(text);
           break;
         }
+        case 'CHECK_AUTH': {
+          const res = await checkSession();
+          sendResponse(res);
+          break;
+        }
+        case 'LOGOUT': {
+          await forceLogout(message.reason || 'Logged out');
+          sendResponse({ ok: true });
+          break;
+        }
         case 'GET_PUBLIC_IP': {
           const info = await getPublicIP();
           sendResponse({ ok: true, info });
+          break;
+        }
+        case 'GET_IP_QUALIFICATION': {
+          try {
+            const resp = await fetch('https://ip-score.com/fulljson');
+            const data = await resp.json();
+            sendResponse({ ok: true, data });
+          } catch (err) {
+            sendResponse({ ok: false, error: err?.message || String(err) });
+          }
           break;
         }
         case 'TEST_IPDATA': {
@@ -114,6 +217,45 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
           break;
         }
+        case 'OPEN_CUSTOM_WEB': {
+          const openerTabId = message.openerTabId || sender?.tab?.id || (await getActiveTabId());
+          const { customWebSize = { width: 1000, height: 800 } } = await chrome.storage.local.get('customWebSize');
+          let url = `custom_web.html?tabId=${openerTabId}`;
+          if (message.initialUrl) url += `&url=${encodeURIComponent(message.initialUrl)}`;
+          if (message.urls) url += `&urls=${encodeURIComponent(JSON.stringify(message.urls))}`;
+          await chrome.windows.create({
+            url: chrome.runtime.getURL(url),
+            type: 'popup',
+            width: customWebSize.width || 1000,
+            height: customWebSize.height || 800
+          });
+          sendResponse({ ok: true });
+          break;
+        }
+        case 'OPEN_OR_FOCUS_CUSTOM_WEB': {
+          const siteUrl = message.url;
+          const openerTabId = message.openerTabId || sender?.tab?.id || (await getActiveTabId());
+          const { customWebSize = { width: 1000, height: 800 } } = await chrome.storage.local.get('customWebSize');
+          const encoded = encodeURIComponent(siteUrl || '');
+          const wins = await chrome.windows.getAll({ populate: true });
+          for (const win of wins) {
+            const tab = (win.tabs || []).find(t => t.url && t.url.includes('custom_web.html') && t.url.includes(`url=${encoded}`));
+            if (tab) {
+              await chrome.windows.update(win.id, { focused: true });
+              await chrome.tabs.update(tab.id, { active: true });
+              sendResponse({ ok: true, focused: true });
+              return;
+            }
+          }
+          await chrome.windows.create({
+            url: chrome.runtime.getURL(`custom_web.html?tabId=${openerTabId}&url=${encoded}`),
+            type: 'popup',
+            width: customWebSize.width || 1000,
+            height: customWebSize.height || 800
+          });
+          sendResponse({ ok: true, created: true });
+          break;
+        }
         case 'GET_TAB_ID': {
           const id = sender?.tab?.id || (await getActiveTabId());
           sendResponse({ ok: true, tabId: id });
@@ -125,7 +267,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           const pr = customPrompts.find(p => p.id === id);
           if (!pr) { sendResponse({ ok: false, error: 'Prompt not found' }); break; }
           const fullPrompt = pr.text + '\n\n' + text;
-          const result = await callOpenRouter(fullPrompt);
+          const result = await callCerebras(fullPrompt);
           sendResponse({ ok: true, result, promptName: pr.name });
           break;
         }
@@ -133,6 +275,65 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           const { gender, nat, force } = message;
           const data = await fetchRandomUser({ gender, nat, force });
           sendResponse({ ok: true, data });
+          break;
+        }
+        case 'GENERATE_REAL_ADDRESS': {
+          const { country = '', state = '', city = '' } = message;
+          const prompt = `Generate a real mailing address based on the following details.\nCountry: ${country}\nState/Province: ${state}\nCity/Zip Code: ${city}\nRespond ONLY with a JSON object: {"address_1": "", "address_2": "", "zip_code": ""}`;
+          const result = await callCerebras(prompt);
+          sendResponse({ ok: true, result });
+          break;
+        }
+        case 'SET_PROXY': {
+          try {
+            const proxy = message.proxy || {};
+            const realInfo = await fetchIPInfoWithTimeout();
+            await validateProxy(proxy); // pre-check
+            await chrome.storage.local.set({ proxyAuth: { username: proxy.proxyUsername, password: proxy.proxyPassword } });
+            await chrome.proxy.settings.set({
+              value: {
+                mode: 'fixed_servers',
+                rules: {
+                  singleProxy: {
+                    scheme: (proxy.proxyType || 'http').toLowerCase(),
+                    host: proxy.proxyIp,
+                    port: parseInt(proxy.proxyPort, 10) || 0
+                  }
+                }
+              },
+              scope: 'regular'
+            });
+            try {
+              const info = await fetchIPInfoWithTimeout();
+              if (!info.ip || info.ip === realInfo.ip) throw new Error('Connection failed');
+              await chrome.storage.local.set({ proxyActive: true, proxyInfo: info, proxyUsage: 0 });
+              startUsageMonitor();
+              sendResponse({ ok: true, info });
+            } catch (e) {
+              await chrome.proxy.settings.clear({ scope: 'regular' });
+              await chrome.storage.local.remove('proxyAuth');
+              throw e;
+            }
+          } catch (e) {
+            sendResponse({ ok: false, error: mapProxyError(e) });
+          }
+          break;
+        }
+        case 'CLEAR_PROXY': {
+          await chrome.proxy.settings.clear({ scope: 'regular' });
+          await chrome.storage.local.set({ proxyActive: false, proxyInfo: null, proxyUsage: 0 });
+          await chrome.storage.local.remove('proxyAuth');
+          stopUsageMonitor();
+          sendResponse({ ok: true });
+          break;
+        }
+        case 'TEST_PROXY': {
+          try {
+            const info = await validateProxy(message.proxy || {});
+            sendResponse({ ok: true, info });
+          } catch (e) {
+            sendResponse({ ok: false, error: mapProxyError(e) });
+          }
           break;
         }
         default:
@@ -145,89 +346,52 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true; // async
 });
 
-async function callOpenRouter(prompt) {
-  const { openrouterApiKey = '', openrouterModel, geminiApiKey = '', cerebrasApiKey = '', aiProvider = 'openrouter' } = await chrome.storage.local.get([
-    'openrouterApiKey', 'openrouterModel', 'geminiApiKey', 'cerebrasApiKey', 'aiProvider'
-  ]);
-
-  if (aiProvider === 'gemini' && geminiApiKey) {
-    return await callGemini(prompt, geminiApiKey);
-  }
-  if (aiProvider === 'cerebras' && cerebrasApiKey) {
-    return await callCerebras(prompt, cerebrasApiKey);
-  }
-
-  if (!openrouterApiKey) {
-    const e = new Error('Missing OpenRouter API key (set it in Options).');
-    e.code = 401; throw e;
-  }
-  const model = openrouterModel || DEFAULTS.openrouterModel;
-  const endpoint = 'https://openrouter.ai/api/v1/chat/completions';
-  const body = {
-    model,
-    messages: [{ role: 'user', content: prompt }],
-    temperature: 0.2
-  };
-  const headers = {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${openrouterApiKey}`
-  };
-  const res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
-  if (res.status === 401 || res.status === 403) {
-    const t = await res.text().catch(() => '');
-    const e = new Error('Unauthorized (401/403). ' + t);
-    e.code = res.status; throw e;
-  }
-  if (res.status === 429) {
-    const e = new Error('Rate limited (429). Try again later.');
-    e.code = 429; throw e;
-  }
-  if (!res.ok) {
-    const t = await res.text().catch(() => '');
-    throw new Error(`OpenRouter error ${res.status}: ${t}`);
-  }
-  const data = await res.json();
-  const text = data?.choices?.[0]?.message?.content || '';
-  return sanitize(text);
-}
-
-async function callGemini(prompt, apiKey) {
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`;
-  const body = {
-    contents: [{
-      parts: [{ text: prompt }]
-    }],
-    generationConfig: {
-      temperature: 0.2,
-      maxOutputTokens: 1000
+let usageListener = null;
+function startUsageMonitor() {
+  usageListener = (details) => {
+    const cl = details.responseHeaders?.find(h => h.name.toLowerCase() === 'content-length');
+    if (cl) {
+      const val = parseInt(cl.value, 10);
+      if (!isNaN(val)) {
+        chrome.storage.local.get('proxyUsage', ({ proxyUsage = 0 }) => {
+          chrome.storage.local.set({ proxyUsage: proxyUsage + val });
+        });
+      }
     }
   };
-  const headers = {
-    'Content-Type': 'application/json'
-  };
-  const res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
-  if (!res.ok) {
-    const t = await res.text().catch(() => '');
-    throw new Error(`Gemini error ${res.status}: ${t}`);
+  try {
+    chrome.webRequest.onCompleted.addListener(usageListener, { urls: ['<all_urls>'] }, ['responseHeaders']);
+  } catch (e) {
+    console.error('usage listener error', e);
   }
-  const data = await res.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-  return sanitize(text);
+}
+function stopUsageMonitor() {
+  if (usageListener) {
+    try { chrome.webRequest.onCompleted.removeListener(usageListener); } catch (e) {}
+    usageListener = null;
+  }
 }
 
-async function callCerebras(prompt, apiKey) {
-  // Cerebras currently exposes its chat completions API under the v1 path.
-  // Using v2 returns 404 Not Found, so ensure we call the correct endpoint.
+async function callCerebras(prompt) {
+  const { cerebrasApiKey = '', cerebrasModel } = await chrome.storage.local.get([
+    'cerebrasApiKey', 'cerebrasModel'
+  ]);
+  if (!cerebrasApiKey) {
+    const e = new Error('Missing Cerebras API key (set it in Options).');
+    e.code = 401;
+    throw e;
+  }
+  const model = cerebrasModel || DEFAULTS.cerebrasModel;
   const endpoint = 'https://api.cerebras.ai/v1/chat/completions';
   const body = {
-    model: 'gpt-oss-120b',
+    model,
     messages: [{ role: 'user', content: prompt }],
     temperature: 0.2,
     max_completion_tokens: 1024
   };
   const headers = {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${apiKey}`
+    'Authorization': `Bearer ${cerebrasApiKey}`
   };
   const res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
   if (!res.ok) {
@@ -303,9 +467,9 @@ function blobToDataURL(blob) {
   });
 }
 
-async function getPublicIP() {
-  const { ipdataApiKey = '' } = await chrome.storage.local.get('ipdataApiKey');
-  if (ipdataApiKey) {
+async function getPublicIP(noKey = false) {
+  const { ipdataApiKey = '' } = noKey ? {} : await chrome.storage.local.get('ipdataApiKey');
+  if (!noKey && ipdataApiKey) {
     try {
       const data = await fetchIPData(ipdataApiKey);
       return {
@@ -405,6 +569,7 @@ async function getPublicIP() {
   throw new Error('Unable to retrieve IP information');
 }
 
+
 async function fetchIPData(key) {
   const url = `https://api.ipdata.co/?api-key=${key}`;
   const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
@@ -418,6 +583,84 @@ async function testIPData(key) {
     return { ok: true, data };
   } catch (e) {
     return { ok: false, error: e.message };
+  }
+}
+
+function isIP(host) {
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
+}
+
+async function resolveHostname(host) {
+  if (isIP(host)) return host;
+  const url = `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(host)}&type=A`;
+  const res = await fetch(url, { headers: { accept: 'application/dns-json' } });
+  if (!res.ok) throw new Error('DNS Not Resolved');
+  const data = await res.json();
+  const answer = data.Answer?.find(a => a.type === 1);
+  if (!answer?.data) throw new Error('DNS Not Resolved');
+  return answer.data;
+}
+
+function mapProxyError(e) {
+  const msg = e?.message || String(e);
+  if (msg.includes('DNS Not Resolved') || msg.includes('Invalid Hostname')) return '❌ Failed: DNS Not Resolved';
+  if (msg.includes('407') || msg.toLowerCase().includes('auth')) return '❌ Failed: Authentication Required';
+  if (msg.includes('timed out') || msg.includes('Timeout') || msg.includes('aborted')) return '❌ Failed: Connection Timed Out';
+  if (msg.includes('Connection failed')) return '❌ Failed: Connection Failed';
+  return '❌ Proxy is offline or refusing connection';
+}
+
+async function fetchIPInfoWithTimeout(timeoutMs = 8000) {
+  let lastErr = null;
+  for (const api of TEST_APIS) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(api, { signal: controller.signal });
+      clearTimeout(timer);
+      if (res.status === 407 || res.status === 401) throw new Error('407');
+      if (!res.ok) throw new Error('IP check failed');
+      if (api.includes('ipify')) {
+        const d = await res.json();
+        return { ip: d.ip };
+      } else if (api.includes('ipinfo')) {
+        const d = await res.json();
+        return { ip: d.ip, city: d.city, country: d.country };
+      } else {
+        const text = await res.text();
+        return { ip: text.trim() };
+      }
+    } catch (e) {
+      clearTimeout(timer);
+      lastErr = e.name === 'AbortError' ? new Error('Connection timed out') : e;
+    }
+  }
+  if (lastErr) throw lastErr;
+  throw new Error('IP check failed');
+}
+
+async function validateProxy(proxy) {
+  await resolveHostname(proxy.proxyIp);
+  await chrome.storage.local.set({ proxyAuth: { username: proxy.proxyUsername, password: proxy.proxyPassword } });
+  try {
+    await chrome.proxy.settings.set({
+      value: {
+        mode: 'fixed_servers',
+        rules: {
+          singleProxy: {
+            scheme: (proxy.proxyType || 'http').toLowerCase(),
+            host: proxy.proxyIp,
+            port: parseInt(proxy.proxyPort, 10) || 0
+          }
+        }
+      },
+      scope: 'regular'
+    });
+    const info = await fetchIPInfoWithTimeout();
+    return info;
+  } finally {
+    try { await chrome.proxy.settings.clear({ scope: 'regular' }); } catch (e) {}
+    await chrome.storage.local.remove('proxyAuth');
   }
 }
 
