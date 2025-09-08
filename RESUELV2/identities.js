@@ -5,11 +5,6 @@ const modal = document.getElementById('identityModal');
 const form = document.getElementById('identityForm');
 const cancelIdentity = document.getElementById('cancelIdentity');
 const modalTitle = document.getElementById('modalTitle');
-const quickModal = document.getElementById('quickModal');
-const quickCancel = document.getElementById('quickCancel');
-const quickConnect = document.getElementById('quickConnect');
-const quickTest = document.getElementById('quickTest');
-const quickTestResult = document.getElementById('quickTestResult');
 const connModal = document.getElementById('connModal');
 const connInfo = document.getElementById('connInfo');
 const connUsage = document.getElementById('connUsage');
@@ -132,34 +127,8 @@ form.addEventListener('submit', e=>{
 cancelIdentity.addEventListener('click', closeForm);
 createBtn.addEventListener('click', ()=>openForm());
 
-quickBtn.addEventListener('click', ()=>{ quickModal.classList.remove('hidden'); });
-quickCancel.addEventListener('click', ()=>quickModal.classList.add('hidden'));
-quickConnect.addEventListener('click', async ()=>{
-  const proxy = {
-    proxyIp: document.getElementById('quickIp').value,
-    proxyPort: document.getElementById('quickPort').value,
-    proxyType: document.getElementById('quickType').value,
-    proxyUsername: document.getElementById('quickUser').value,
-    proxyPassword: document.getElementById('quickPass').value
-  };
-  const test = await testProxy(proxy);
-  if(!test.ok) return;
-    chrome.runtime.sendMessage({type:'SET_PROXY', proxy}, res=>{
-      if(res?.ok){ showDashboard(res.info); }
-      else showNotification(res?.error || '❌ Connection failed');
-    });
-  quickModal.classList.add('hidden');
-});
-
-quickTest.addEventListener('click', ()=>{
-  const proxy = {
-    proxyIp: document.getElementById('quickIp').value,
-    proxyPort: document.getElementById('quickPort').value,
-    proxyType: document.getElementById('quickType').value,
-    proxyUsername: document.getElementById('quickUser').value,
-    proxyPassword: document.getElementById('quickPass').value
-  };
-  testProxy(proxy, quickTestResult);
+quickBtn.addEventListener('click', () => {
+  chrome.tabs.create({ url: chrome.runtime.getURL('src/proxy/proxy_menu.html') });
 });
 
 function applyProxy(idObj){
