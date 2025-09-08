@@ -12,7 +12,6 @@
     userEmail: document.getElementById('userEmail'),
     sessionTimer: document.getElementById('sessionTimer'),
     logoutBtn: document.getElementById('logoutBtn'),
-    proxyBar: document.getElementById('proxyBar'),
     navCustom: document.getElementById('navCustom'),
     navIdent: document.getElementById('navIdent'),
     navOptions: document.getElementById('navOptions'),
@@ -355,19 +354,4 @@ async function loadIP(){
 
 (async function init(){
   loadIP();
-  updateProxyBar();
 })();
-
-function updateProxyBar(){
-  chrome.storage.local.get(['proxyActive','proxyInfo'], ({proxyActive, proxyInfo})=>{
-    if(!els.proxyBar) return;
-    if(proxyActive && proxyInfo){
-      els.proxyBar.textContent = `IP: ${proxyInfo.ip} | 📍 ${proxyInfo.city}, ${proxyInfo.country}`;
-      els.proxyBar.classList.add('active');
-    } else {
-      els.proxyBar.textContent = 'Proxy: Off';
-      els.proxyBar.classList.remove('active');
-    }
-  });
-}
-chrome.storage.onChanged.addListener(chg=>{ if(chg.proxyActive || chg.proxyInfo) updateProxyBar(); });

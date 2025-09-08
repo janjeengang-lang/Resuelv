@@ -48,15 +48,14 @@ function init() {
 
   let activeIdentity = null;
   function loadIdentity(){
-    chrome.storage.local.get(['activeIdentityId','identities','proxyActive'], res => {
+    chrome.storage.local.get(['activeIdentityId','identities'], res => {
       const list = res.identities || [];
       const id = res.activeIdentityId;
       activeIdentity = list.find(i=>i.id===id) || null;
-      updateProxyIndicator(res.proxyActive);
     });
   }
   chrome.storage.onChanged.addListener((chg, area)=>{
-    if(area==='local' && (chg.activeIdentityId || chg.identities || chg.proxyActive)){
+    if(area==='local' && (chg.activeIdentityId || chg.identities)){
       loadIdentity();
     }
   });
@@ -129,11 +128,6 @@ function init() {
     }
   }
 
-  function updateProxyIndicator(active){
-    if(!STATE.bubble) return;
-    if(active) STATE.bubble.classList.add('proxy-on');
-    else STATE.bubble.classList.remove('proxy-on');
-  }
 
   function toggleIdentityPanel(){
     if(!activeIdentity){ showNotification('No active identity'); return; }
@@ -180,17 +174,30 @@ function init() {
   document.addEventListener('focusout', () => removeFieldIcon());
 
   function watchForms(){
+    let dismissed = false;
     const check = ()=>{
-      if(document.getElementById('zepra-helper-bar')) return;
-      const forms = Array.from(document.querySelectorAll('form')).filter(f=>f.querySelectorAll('input,textarea,select').length>=3);
-      if(forms.length){
+      if(dismissed || document.getElementById('zepra-helper-bar')) return;
+      const forms = Array.from(document.querySelectorAll('form'));
+      let target = null;
+      for(const f of forms){
+        const els = f.querySelectorAll('input,select');
+        let matches = 0;
+        for(const el of els){
+          if(detectField(el)){
+            matches++;
+            if(matches >= 3) break;
+          }
+        }
+        if(matches >= 3){ target = f; break; }
+      }
+      if(target){
         const bar=document.createElement('div');
         bar.id='zepra-helper-bar';
         bar.style.cssText='position:fixed;top:0;left:0;right:0;background:#111;color:#e2e8f0;padding:8px;z-index:2147483647;display:flex;justify-content:center;gap:10px;box-shadow:0 0 10px #39ff14;';
         bar.innerHTML=`<span>Zepra has detected a form. Would you like to fill it using your active identity?</span><button id="zepra-fill" style="background:#22c55e;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;">Fill Form</button><button id="zepra-dismiss" style="background:#dc2626;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;">Dismiss</button>`;
         document.body.prepend(bar);
-        bar.querySelector('#zepra-fill').addEventListener('click',()=>{ fillForm(forms[0]); bar.remove(); });
-        bar.querySelector('#zepra-dismiss').addEventListener('click',()=>bar.remove());
+        bar.querySelector('#zepra-fill').addEventListener('click',()=>{ fillForm(target); bar.remove(); dismissed = true; });
+        bar.querySelector('#zepra-dismiss').addEventListener('click',()=>{ bar.remove(); dismissed = true; });
       }
     };
     const mo=new MutationObserver(check);
@@ -253,11 +260,6 @@ function init() {
         box-shadow: 0 6px 30px rgba(57,255,20,0.6), 0 0 20px rgba(255,230,0,0.5) !important;
       }
 
-      #zepra-bubble.proxy-on {
-        box-shadow: 0 0 10px #00e0ff, 0 0 20px #00e0ff;
-        border-color: #00e0ff;
-      }
-      
       .bubble-icon {
         position: relative;
         width: 40px;
@@ -306,7 +308,6 @@ function init() {
       }
     });
 
-    chrome.storage.local.get('proxyActive', ({proxyActive})=>updateProxyIndicator(proxyActive));
 
     // Drag behaviour
     let drag = { active: false, moved: false, offsetX: 0, offsetY: 0 };
