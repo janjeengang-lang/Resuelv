@@ -1,0 +1,380 @@
+/* YouTube Video Dubbing Styles for Zepra Chrome Extension */
+
+/* ============= BUTTON STYLES ============= */
+
+.zepra-dub-button {
+  animation: zepra-pulse 2s ease-in-out infinite;
+}
+
+.zepra-dub-button:hover {
+  animation: none;
+}
+
+.zepra-dub-button .pulse-ring {
+  animation: zepra-ring-pulse 2s ease-in-out infinite;
+}
+
+@keyframes zepra-pulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 4px #39ff14);
+  }
+  50% {
+    filter: drop-shadow(0 0 8px #39ff14) drop-shadow(0 0 12px rgba(57, 255, 20, 0.5));
+  }
+}
+
+@keyframes zepra-ring-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.8;
+  }
+}
+
+/* ============= MODAL STYLES ============= */
+
+.zepra-dub-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(5px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999999;
+  animation: zepra-fade-in 0.3s ease-out;
+}
+
+.zepra-dub-modal-content {
+  background: linear-gradient(135deg, #1a1a1a 0%, #0d0d0d 100%);
+  border: 2px solid #39ff14;
+  border-radius: 12px;
+  padding: 0;
+  width: 90%;
+  max-width: 400px;
+  box-shadow: 
+    0 0 20px rgba(57, 255, 20, 0.3),
+    0 10px 40px rgba(0, 0, 0, 0.5);
+  animation: zepra-slide-up 0.3s ease-out;
+}
+
+.zepra-dub-modal-header {
+  background: rgba(0, 0, 0, 0.5);
+  padding: 15px 20px;
+  border-bottom: 1px solid rgba(57, 255, 20, 0.2);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-radius: 12px 12px 0 0;
+}
+
+.zepra-dub-modal-header h3 {
+  margin: 0;
+  color: #39ff14;
+  font-size: 18px;
+  font-weight: 600;
+  text-shadow: 0 0 10px rgba(57, 255, 20, 0.5);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.zepra-dub-modal-close {
+  background: none;
+  border: none;
+  color: #ffe600;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.zepra-dub-modal-close:hover {
+  background: rgba(255, 230, 0, 0.1);
+  transform: rotate(90deg);
+}
+
+.zepra-dub-modal-body {
+  padding: 20px;
+}
+
+/* ============= FORM CONTROLS ============= */
+
+.zepra-dub-control {
+  margin-bottom: 20px;
+}
+
+.zepra-dub-control label {
+  display: block;
+  color: #e2e8f0;
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 8px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+#zepra-dub-lang {
+  width: 100%;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(57, 255, 20, 0.3);
+  border-radius: 8px;
+  color: #e2e8f0;
+  font-size: 14px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+#zepra-dub-lang:hover {
+  border-color: #39ff14;
+  background: rgba(0, 0, 0, 0.8);
+}
+
+#zepra-dub-lang:focus {
+  outline: none;
+  border-color: #39ff14;
+  box-shadow: 0 0 0 2px rgba(57, 255, 20, 0.2);
+}
+
+#zepra-dub-lang option {
+  background: #1a1a1a;
+  color: #e2e8f0;
+  padding: 5px;
+}
+
+/* ============= START BUTTON ============= */
+
+.zepra-dub-start-btn {
+  width: 100%;
+  padding: 12px 20px;
+  background: linear-gradient(135deg, #39ff14 0%, #2bc90f 100%);
+  border: none;
+  border-radius: 8px;
+  color: #0d0d0d;
+  font-size: 16px;
+  font-weight: 600;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  cursor: pointer;
+  transition: all 0.3s;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  box-shadow: 0 4px 15px rgba(57, 255, 20, 0.3);
+  margin-bottom: 15px;
+}
+
+.zepra-dub-start-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(57, 255, 20, 0.4);
+  background: linear-gradient(135deg, #4fff24 0%, #3bd91f 100%);
+}
+
+.zepra-dub-start-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.zepra-dub-start-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
+  color: #666;
+  box-shadow: none;
+}
+
+/* ============= STATUS AREA ============= */
+
+.zepra-dub-status {
+  min-height: 40px;
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  text-align: center;
+  transition: all 0.3s;
+}
+
+.zepra-dub-status.loading {
+  background: rgba(255, 230, 0, 0.1);
+  border: 1px solid rgba(255, 230, 0, 0.3);
+  color: #ffe600;
+  animation: zepra-status-pulse 1.5s ease-in-out infinite;
+}
+
+.zepra-dub-status.success {
+  background: rgba(57, 255, 20, 0.1);
+  border: 1px solid rgba(57, 255, 20, 0.3);
+  color: #39ff14;
+  animation: zepra-status-success 0.5s ease-out;
+}
+
+.zepra-dub-status.error {
+  background: rgba(255, 77, 77, 0.1);
+  border: 1px solid rgba(255, 77, 77, 0.3);
+  color: #ff4d4d;
+  animation: zepra-status-error 0.5s ease-out;
+}
+
+.zepra-dub-status.info {
+  background: rgba(100, 100, 100, 0.1);
+  border: 1px solid rgba(100, 100, 100, 0.3);
+  color: #e2e8f0;
+}
+
+/* ============= LOADING SPINNER ============= */
+
+.zepra-dub-status.loading::before {
+  content: '';
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid transparent;
+  border-top-color: #ffe600;
+  border-radius: 50%;
+  animation: zepra-spin 1s linear infinite;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+/* ============= ANIMATIONS ============= */
+
+@keyframes zepra-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes zepra-slide-up {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes zepra-status-pulse {
+  0%, 100% {
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes zepra-status-success {
+  0% {
+    transform: scale(0.9);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes zepra-status-error {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  10%, 30%, 50%, 70%, 90% {
+    transform: translateX(-2px);
+  }
+  20%, 40%, 60%, 80% {
+    transform: translateX(2px);
+  }
+}
+
+@keyframes zepra-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* ============= RESPONSIVE DESIGN ============= */
+
+@media (max-width: 480px) {
+  .zepra-dub-modal-content {
+    width: 95%;
+    margin: 10px;
+  }
+  
+  .zepra-dub-modal-header h3 {
+    font-size: 16px;
+  }
+  
+  .zepra-dub-start-btn {
+    font-size: 14px;
+    padding: 10px 16px;
+  }
+}
+
+/* ============= DARK MODE SUPPORT ============= */
+
+@media (prefers-color-scheme: light) {
+  .zepra-dub-modal-content {
+    background: linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%);
+    color: #1a1a1a;
+  }
+  
+  .zepra-dub-control label {
+    color: #333;
+  }
+  
+  #zepra-dub-lang {
+    background: rgba(255, 255, 255, 0.9);
+    color: #333;
+    border-color: rgba(57, 255, 20, 0.5);
+  }
+  
+  #zepra-dub-lang option {
+    background: white;
+    color: #333;
+  }
+}
+
+/* ============= ACCESSIBILITY ============= */
+
+.zepra-dub-modal *:focus-visible {
+  outline: 2px solid #39ff14;
+  outline-offset: 2px;
+}
+
+.zepra-dub-button:focus-visible {
+  outline: 2px solid #39ff14;
+  outline-offset: 4px;
+}
+
+/* Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+  .zepra-dub-modal,
+  .zepra-dub-modal-content,
+  .zepra-dub-button,
+  .zepra-dub-start-btn,
+  .zepra-dub-status {
+    animation: none;
+    transition: none;
+  }
+  
+  .zepra-dub-button .pulse-ring {
+    animation: none;
+  }
+}

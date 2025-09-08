@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Custom Sites</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    body {
+      margin:0;
+      display:flex;
+      flex-direction:column;
+      height:100vh;
+      background:#000;
+      position:relative;
+    }
+
+    body::before {
+      content:"";
+      position:fixed;
+      top:0; left:0; right:0; bottom:0;
+      pointer-events:none;
+      padding:3px;
+      border-radius:8px;
+      background:linear-gradient(270deg,#39ff14,#ffe600,#39ff14);
+      background-size:600% 600%;
+      -webkit-mask:
+        linear-gradient(#000 0 0) content-box,
+        linear-gradient(#000 0 0);
+      -webkit-mask-composite:xor;
+              mask-composite:exclude;
+      animation:borderGlow 6s linear infinite;
+    }
+
+    @keyframes borderGlow {
+      0% { background-position:0% 50%; }
+      50% { background-position:100% 50%; }
+      100% { background-position:0% 50%; }
+    }
+
+    #controls {
+      display:flex;
+      align-items:center;
+      gap:8px;
+      background:#0b0b0b;
+      padding:8px;
+    }
+
+    #siteSelect { flex:1; background:#000; color:#e2e8f0; border:1px solid #39ff14; }
+
+    #container { flex:1; position:relative; }
+
+    #container iframe {
+      position:absolute;
+      top:0; left:0;
+      width:100%; height:100%;
+      border:none;
+    }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <select id="siteSelect"></select>
+    <button id="writeHereBtn" class="btn">Write Here</button>
+    <button id="clearDataBtn" class="btn warn">Remove Cookies</button>
+    <button id="toggleSelect" class="btn">Hide</button>
+  </div>
+  <div id="container"></div>
+  <script src="custom_web.js"></script>
+</body>
+</html>
