@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Activity Log - Zepra</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    body { background:#000; color:var(--fg); font-family: Arial, sans-serif; margin:0; padding:20px; width:360px; }
+    h1 { text-align:center; }
+    #historyList { margin-top:15px; max-height:400px; overflow-y:auto; }
+    .entry { background:var(--card); border:1px solid var(--accent); border-radius:8px; padding:8px; margin-bottom:10px; }
+    .entry-title { color:var(--accent2); font-weight:600; margin-bottom:4px; }
+    .entry-url { font-size:12px; word-break:break-all; color:var(--muted); margin-bottom:6px; }
+    .entry-actions { display:flex; gap:6px; }
+    .entry-actions button { flex:1; background:var(--btn); border:1px solid #334155; border-radius:4px; color:var(--fg); padding:4px; cursor:pointer; font-size:12px; }
+    .entry-actions button:hover { filter:brightness(1.1); }
+  </style>
+</head>
+<body>
+  <h1 class="zepra-gradient">Activity Log</h1>
+  <input id="filter" placeholder="Search history" style="padding:6px 10px;border-radius:6px;border:1px solid #334155;background:#0b1220;color:var(--fg);width:100%;"/>
+  <div id="historyList"></div>
+  <script src="history.js"></script>
+</body>
+</html>
