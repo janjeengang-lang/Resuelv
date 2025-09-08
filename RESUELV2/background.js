@@ -2,6 +2,11 @@
 // - OpenRouter chat completions
 // - OCR via OCR.space
 // - Public IP via ipdata with fallback services
+// - Proxy control (HTTP/HTTPS via chrome.proxy, SOCKS via native helper)
+
+// Load proxy utilities. The script exposes a global `configureProxy`
+// function used below.
+importScripts('proxy.js');
 
 const DEFAULTS = {
   openrouterModel: 'google/gemini-2.0-flash-exp:free',
@@ -133,6 +138,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           const { gender, nat, force } = message;
           const data = await fetchRandomUser({ gender, nat, force });
           sendResponse({ ok: true, data });
+          break;
+        }
+        case 'SET_PROXY': {
+          await configureProxy(message.proxy);
+          sendResponse({ ok: true });
           break;
         }
         default:

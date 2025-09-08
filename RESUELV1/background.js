@@ -2,6 +2,10 @@
 // - OpenRouter chat completions
 // - OCR via OCR.space
 // - Public IP via ipapi.co
+// - Proxy control (HTTP/HTTPS via chrome.proxy, SOCKS via native helper)
+
+// Load proxy utilities that expose a global `configureProxy` function.
+importScripts('proxy.js');
 
 const DEFAULTS = {
   openrouterModel: 'google/gemini-2.0-flash-exp:free',
@@ -96,6 +100,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         case 'GET_TAB_ID': {
           const id = sender?.tab?.id || (await getActiveTabId());
           sendResponse({ ok: true, tabId: id });
+          break;
+        }
+        case 'SET_PROXY': {
+          await configureProxy(message.proxy);
+          sendResponse({ ok: true });
           break;
         }
         default:

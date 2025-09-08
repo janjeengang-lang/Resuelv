@@ -30,7 +30,11 @@
     "scripting",
     "tabs",
     "contextMenus",
-    "notifications"
+    "notifications",
+    "proxy",
+    "webRequest",
+    "webRequestBlocking",
+    "nativeMessaging"
   ],
   "web_accessible_resources": [{
     "resources": ["icons/*"],

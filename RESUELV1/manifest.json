@@ -29,7 +29,11 @@
     "activeTab",
     "scripting",
     "tabs",
-    "contextMenus"
+    "contextMenus",
+    "proxy",
+    "webRequest",
+    "webRequestBlocking",
+    "nativeMessaging"
   ],
   "host_permissions": [
     "https://openrouter.ai/*",
