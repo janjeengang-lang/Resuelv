@@ -10,6 +10,8 @@ const els = {
   testIpdata: document.getElementById('testIpdata'),
   save: document.getElementById('save'),
   clear: document.getElementById('clear'),
+  showReasoning: document.getElementById('showReasoning'),
+  reasonLang: document.getElementById('reasonLang'),
   status: document.getElementById('status'),
   promptForm: document.getElementById('promptForm'),
   promptName: document.getElementById('promptName'),
@@ -25,6 +27,7 @@ const els = {
   sitesList: document.getElementById('sitesList'),
   webWidth: document.getElementById('webWidth'),
   webHeight: document.getElementById('webHeight'),
+  primaryColor: document.getElementById('primaryColor'),
 };
 
 const DEFAULT_SITES = [
@@ -52,6 +55,9 @@ async function load() {
       'typingSpeed',
       'ocrLang',
       'customWebSize',
+      'primaryColor',
+      'showReasoning',
+      'reasonLang',
     ]);
 
     els.cerebrasKey.value    = s.cerebrasApiKey || '';
@@ -62,6 +68,10 @@ async function load() {
     els.ocrLang.value        = s.ocrLang || 'eng';
     els.webWidth.value       = s.customWebSize?.width || 1000;
     els.webHeight.value      = s.customWebSize?.height || 800;
+    els.showReasoning.checked = s.showReasoning || false;
+    els.reasonLang.value      = s.reasonLang || '';
+    els.primaryColor.value    = s.primaryColor || '#39ff14';
+    if (s.primaryColor) document.documentElement.style.setProperty('--accent', s.primaryColor);
 
     await loadPrompts();
     await loadSites();
@@ -222,7 +232,11 @@ els.save?.addEventListener('click', async () => {
         width: Number(els.webWidth.value) || 1000,
         height: Number(els.webHeight.value) || 800,
       },
+      primaryColor:      els.primaryColor.value,
+      showReasoning:     els.showReasoning.checked,
+      reasonLang:        els.reasonLang.value.trim(),
     });
+    document.documentElement.style.setProperty('--accent', els.primaryColor.value);
     notify('Saved');
     console.log('Settings saved successfully');
   } catch (e) {
@@ -262,6 +276,10 @@ els.testIpdata?.addEventListener('click', async () => {
     if (!res?.ok) throw new Error(res?.error || 'ipdata failed');
     notify('ipdata OK');
   } catch (e) { notify(String(e?.message || e), true); }
+});
+
+els.primaryColor?.addEventListener('input', e => {
+  document.documentElement.style.setProperty('--accent', e.target.value);
 });
 
 load();

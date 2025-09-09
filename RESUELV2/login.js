@@ -12,6 +12,30 @@ const emailEl = document.getElementById('email');
 const passEl = document.getElementById('password');
 const btn = document.getElementById('loginBtn');
 const msg = document.getElementById('loginError');
+const headerWrap = document.getElementById('headerWrap');
+let headerVideo = document.getElementById('headerVideo');
+const clickSound = new Audio(chrome.runtime.getURL('src/media/click.mp3'));
+const successSound = new Audio(chrome.runtime.getURL('src/media/success.mp3'));
+
+function switchHeader(src){
+  if(!headerWrap) return;
+  const removeLoader = window.showLoadingIndicator ? window.showLoadingIndicator(headerWrap) : () => {};
+  const newVid = document.createElement('video');
+  newVid.autoplay = true;
+  newVid.loop = true;
+  newVid.muted = true;
+  newVid.src = src;
+  newVid.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:0;transition:opacity 0.6s';
+  newVid.addEventListener('loadeddata', removeLoader, {once:true});
+  headerWrap.appendChild(newVid);
+  requestAnimationFrame(()=>{ newVid.style.opacity = 1; });
+  if(headerVideo){
+    headerVideo.style.opacity = 0;
+    setTimeout(()=>{ headerVideo.remove(); headerVideo = newVid; },600);
+  } else {
+    headerVideo = newVid;
+  }
+}
 
 // Redirect if already logged in and show any logout message
 chrome.storage.local.get(['loggedIn', 'logoutMsg'], ({ loggedIn, logoutMsg }) => {
@@ -25,6 +49,7 @@ chrome.storage.local.get(['loggedIn', 'logoutMsg'], ({ loggedIn, logoutMsg }) =>
 });
 
 btn.addEventListener('click', async () => {
+  clickSound.play();
   const email = emailEl.value.trim();
   const password = passEl.value;
   msg.textContent = '';
@@ -49,8 +74,11 @@ btn.addEventListener('click', async () => {
     });
     msg.style.color = 'var(--accent)';
     msg.textContent = 'Logged in successfully!';
+    successSound.play();
+    switchHeader('src/media/zepra.webm');
     setTimeout(() => { window.location.href = 'popup.html'; }, 800);
   } catch (e) {
+    switchHeader('src/media/carry.webm');
     msg.textContent = 'Invalid email or password';
   }
 });
