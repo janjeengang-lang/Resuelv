@@ -1,94 +1,31 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>Identities</title>
-  <link rel="stylesheet" href="styles.css">
-  <style>
-    body{background:#000;color:#e2e8f0;font-family:Arial,sans-serif;margin:0;padding:20px;}
-    h1{margin-top:0;}
-    .grid{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px;}
-    .card{background:var(--card);border:2px solid #292d33;border-radius:12px;padding:12px;width:220px;position:relative;box-shadow:0 0 12px rgba(57,255,20,0.2);text-align:center;}
-    .card.active{border-color:#39ff14;box-shadow:0 0 20px #39ff14;}
-    .pic-wrap{margin:0 auto 8px;width:80px;height:80px;border-radius:50%;padding:3px;background:linear-gradient(45deg,#39ff14,#ffe600);animation:spin 6s linear infinite;}
-    .pic-wrap img{width:100%;height:100%;border-radius:50%;object-fit:cover;}
-    @keyframes spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
-    .card .name{font-weight:bold;color:#ffd600;margin-bottom:4px;}
-    .badge{position:absolute;top:8px;right:8px;background:#39ff14;color:#000;padding:2px 6px;border-radius:4px;font-size:0.7rem;}
-    .actions{display:flex;flex-direction:column;gap:4px;margin-top:8px;}
-    .actions button{padding:6px;font-size:0.8rem;}
-    .btn{background:#1f2937;color:#e2e8f0;border:1px solid #334155;border-radius:6px;cursor:pointer;}
-    .btn:hover{background:#374151;}
-      #create{background:#39ff14;color:#000;border:none;padding:6px 10px;margin-right:8px;}
-      #createAI{background:#39ff14;color:#000;border:none;padding:6px 10px;}
-    .modal{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:9999;}
-    .modal.hidden{display:none;}
-    .modal-content{background:#111;padding:20px;border:2px solid #39ff14;border-radius:8px;max-height:80vh;overflow:auto;width:400px;}
-    .modal-content.glow{box-shadow:0 0 20px #39ff14;}
-    .modal-content h2{margin-top:0;color:#ffd600;}
-    .modal-content label{display:block;margin-top:10px;font-size:0.8rem;}
-    .modal-content input, .modal-content select{width:100%;padding:6px;margin-top:4px;background:#0b1220;color:#e2e8f0;border:1px solid #334155;border-radius:4px;}
-    .modal-content .form-actions{margin-top:12px;display:flex;gap:8px;justify-content:flex-end;}
-  </style>
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <h1 class="zepra-gradient">Identities</h1>
-  <div>
-    <button id="create" class="btn">+ Create New Identity</button>
-    <button id="createAI" class="btn">+ Create with AI</button>
+  <div class="video-header">
+    <video src="videos/key.webm" autoplay loop muted></video>
   </div>
-  <div id="grid" class="grid"></div>
+  <div class="page">
+    <h2 class="zepra-gradient" style="text-align:center;">Identities</h2>
+    <button id="createAI" class="btn primary" style="margin-bottom:10px;">+ Create with AI</button>
+    <div id="cards"></div>
+  </div>
 
-  <!-- Identity Modal -->
-  <div id="identityModal" class="modal hidden">
+  <div id="aiModal">
     <div class="modal-content">
-      <h2 id="modalTitle">New Identity</h2>
-      <form id="identityForm">
-        <input type="hidden" name="id">
-        <label>Identity Name<input name="identityName" required></label>
-        <label>Profile Picture URL<input name="profilePictureUrl"></label>
-        <label>Full Name<input name="fullName"></label>
-        <label>First Name<input name="firstName"></label>
-        <label>Last Name<input name="lastName"></label>
-        <label>Age<input name="age"></label>
-        <label>Email<input name="email"></label>
-        <label>Username<input name="username"></label>
-        <label>Password<input name="password"></label>
-        <label>Phone<input name="phone"></label>
-        <label>MAC Address<input name="macAddress"></label>
-        <label>Address 1<input name="address1"></label>
-        <label>Address 2<input name="address2"></label>
-        <label>City<input name="city"></label>
-        <label>State<input name="state"></label>
-        <label>Zip Code<input name="zipCode"></label>
-        <label>Country<input name="country"></label>
-        <h3 style="margin-top:10px;">Company Info</h3>
-        <label>Company Name<input name="companyName"></label>
-        <label>Industry<input name="companyIndustry"></label>
-        <label>Company Size<input name="companySize"></label>
-        <label>Annual Revenue<input name="companyAnnualRevenue"></label>
-        <label>Website<input name="companyWebsite"></label>
-        <label>Company Address<input name="companyAddress"></label>
-        <div class="form-actions">
-          <button type="button" id="cancelIdentity" class="btn">Cancel</button>
-          <button type="submit" class="btn">Save</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- AI Create Modal -->
-  <div id="aiModal" class="modal hidden">
-    <div class="modal-content glow">
-      <h2>Create Identity with AI</h2>
-      <textarea id="aiPrompt" style="width:100%;height:120px;background:#0b1220;color:#e2e8f0;border:1px solid #334155;border-radius:4px;"></textarea>
-      <div class="form-actions" style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;">
-        <button type="button" id="aiCancel" class="btn">Cancel</button>
-        <button type="button" id="aiGenerate" class="btn">Generate</button>
+      <h3 class="zepra-gradient">AI Persona Prompt</h3>
+      <textarea id="aiPrompt" style="width:100%;height:80px;background:#0b1220;color:var(--fg);border:1px solid #334155;border-radius:6px;"></textarea>
+      <div class="row end" style="margin-top:8px;">
+        <button id="generate" class="btn primary">Generate</button>
       </div>
     </div>
   </div>
 
+  <script src="theme.js"></script>
   <script src="identities.js"></script>
 </body>
 </html>

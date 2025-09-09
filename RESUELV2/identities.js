@@ -1,133 +1,66 @@
-const grid = document.getElementById('grid');
-const createBtn = document.getElementById('create');
-const createAIBtn = document.getElementById('createAI');
-const aiModal = document.getElementById('aiModal');
-const aiPrompt = document.getElementById('aiPrompt');
-const aiGenerate = document.getElementById('aiGenerate');
-const aiCancel = document.getElementById('aiCancel');
-const modal = document.getElementById('identityModal');
-const form = document.getElementById('identityForm');
-const cancelIdentity = document.getElementById('cancelIdentity');
-const modalTitle = document.getElementById('modalTitle');
+const cards = document.getElementById('cards');
+const createBtn = document.getElementById('createAI');
+const modal = document.getElementById('aiModal');
+const generateBtn = document.getElementById('generate');
+const promptEl = document.getElementById('aiPrompt');
 
 let identities = [];
 let activeId = null;
 
-function uid(){
-  return Date.now().toString(36) + Math.random().toString(36).slice(2);
-}
-
-function load(){
-  chrome.storage.local.get(['identities','activeIdentityId'], res => {
-    identities = res.identities || [];
-    activeId = res.activeIdentityId || null;
-    render();
+function render(){
+  cards.innerHTML = '';
+  identities.forEach((id, idx)=>{
+    const card = document.createElement('div');
+    card.className = 'identity-card';
+    card.innerHTML = `
+      <div class="avatar"><video src="videos/zepra.webm" autoplay loop muted></video></div>
+      <h3>${id.fullName || 'Unnamed'}</h3>
+      <div class="actions">
+        ${activeId === idx ? '<button class="btn warn" data-act="deactivate">Deactivate</button>' : '<button class="btn primary" data-act="activate">Activate</button>'}
+        <button class="btn" data-act="delete">Delete</button>
+      </div>
+    `;
+    card.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>handleAction(idx,b.dataset.act)));
+    cards.appendChild(card);
   });
 }
 
-function render(){
-  grid.innerHTML = '';
-  for(const id of identities){
-    const card = document.createElement('div');
-    card.className = 'card' + (id.id===activeId ? ' active' : '');
-    card.innerHTML = `
-      ${id.id===activeId?'<div class="badge">Active</div>':''}
-      <div class="pic-wrap"><img src="${id.profilePictureUrl||'icons/zepra.svg'}" alt="pf"></div>
-      <div class="name">${id.identityName||'No name'}</div>
-      <div>${id.country||''}</div>
-      <div class="actions">
-        <button class="btn act">${id.id===activeId?'Deactivate':'Activate'}</button>
-        <button class="btn edit">Edit</button>
-        <button class="btn del">Delete</button>
-      </div>
-    `;
-    card.querySelector('.act').addEventListener('click',()=>toggleActive(id.id));
-    card.querySelector('.edit').addEventListener('click',()=>openForm(id));
-    card.querySelector('.del').addEventListener('click',()=>remove(id.id));
-    grid.appendChild(card);
-  }
+function handleAction(index, act){
+  if(act==='activate') activeId = index;
+  if(act==='deactivate') activeId = null;
+  if(act==='delete') identities.splice(index,1);
+  chrome.storage.local.set({identities, activeId}, render);
 }
 
-function openForm(data){
-  form.reset();
-  form.id.value = data?.id || '';
-  for(const k of Object.keys(data||{})){
-    if(form[k]) form[k].value = data[k];
-  }
-  modalTitle.textContent = data? 'Edit Identity' : 'New Identity';
-  modal.classList.remove('hidden');
-}
+createBtn.addEventListener('click',()=>{ modal.style.display='flex'; });
+modal.addEventListener('click',e=>{ if(e.target===modal) modal.style.display='none'; });
 
-function closeForm(){
-  modal.classList.add('hidden');
-}
-
-function remove(id){
-  identities = identities.filter(i=>i.id!==id);
-  if(activeId===id) activeId = null;
-  save();
-  render();
-}
-
-function save(){
-  chrome.storage.local.set({identities, activeIdentityId: activeId});
-}
-
-function toggleActive(id){
-  if(activeId===id){
-    activeId = null;
-  } else {
-    activeId = id;
-  }
-  save();
-  render();
-}
-
-form.addEventListener('submit', e=>{
-  e.preventDefault();
-  const fd = new FormData(form);
-  const obj = {};
-  fd.forEach((v,k)=>{obj[k]=v;});
-  if(obj.id){
-    const idx = identities.findIndex(i=>i.id===obj.id);
-    if(idx>-1) identities[idx] = Object.assign(identities[idx], obj);
-  } else {
-    obj.id = uid();
-    identities.push(obj);
-  }
-  closeForm();
-  save();
-  render();
-});
-
-cancelIdentity.addEventListener('click', closeForm);
-createBtn.addEventListener('click', ()=>openForm());
-createAIBtn.addEventListener('click', ()=>{
-  aiPrompt.value='';
-  aiModal.classList.remove('hidden');
-});
-aiCancel.addEventListener('click', ()=>aiModal.classList.add('hidden'));
-aiGenerate.addEventListener('click', async () => {
-  const prompt = aiPrompt.value.trim();
-  if (!prompt) return;
+generateBtn.addEventListener('click', async ()=>{
+  const prompt = promptEl.value.trim();
+  if(!prompt) return;
+  const body = {
+    model: 'gpt-3.5-turbo',
+    messages: [{role:'user', content:`Generate a JSON identity for: ${prompt}`}] ,
+    temperature:0.7
+  };
   try {
-    const res = await chrome.runtime.sendMessage({ type: 'GENERATE_IDENTITY', prompt });
-    if (!res?.ok) throw new Error('fetch');
-    let data;
-    try {
-      data = JSON.parse(res.result);
-    } catch (e) {
-      console.error('Zepra Debug: Failed to parse AI response. Raw response was:', res?.result);
-      alert('Error: AI provided an invalid response format.');
-      return;
-    }
-    data.profilePictureUrl = '';
-    openForm(data);
-    aiModal.classList.add('hidden');
-  } catch (e) {
-    alert('Error: Could not connect to the AI service. Please check your API key and network connection.');
+    const res = await fetch('https://api.openai.com/v1/chat/completions',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer YOUR_API_KEY'},
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    const text = data.choices[0].message.content;
+    const json = JSON.parse(text);
+    identities.push(json);
+    chrome.storage.local.set({identities},()=>{ render(); modal.style.display='none'; });
+  } catch(err){
+    console.error(err);
   }
 });
 
-load();
-
+chrome.storage.local.get(['identities','activeId'], res=>{
+  identities = res.identities || [];
+  activeId = res.activeId ?? null;
+  render();
+});

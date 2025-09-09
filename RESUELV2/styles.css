@@ -1,61 +1,164 @@
 :root {
-  --bg: #000000;
+  --bg: #000;
   --fg: #e2e8f0;
-  --muted: #94a3b8;
-  --accent: #39ff14;
-  --accent2: #ffe600;
+  --primary: #39ff14;
+  --secondary: #ffe600;
   --warn: #ef4444;
   --card: #0b0b0b;
   --btn: #1a1a1a;
 }
-/* Neon gradient text for Zepra branding */
+
+body {
+  margin: 0;
+  font: 13px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+/* Video headers and backgrounds */
+.video-header {
+  position: relative;
+  height: 120px;
+  overflow: hidden;
+}
+.video-header video {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 1;
+  transition: opacity .6s ease-in-out;
+}
+.video-header video.fade-out { opacity: 0; }
+
+/* Global layout */
+.page { padding: 12px; }
+.btn {
+  background: var(--btn);
+  color: var(--fg);
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+.btn.primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #0b1215;
+  font-weight: 600;
+}
+.btn.warn {
+  background: #1f2937;
+  border-color: var(--warn);
+  color: var(--warn);
+}
+.btn:hover { filter: brightness(1.1); }
+
+/* Identity cards */
+#cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  padding: 12px;
+}
+.identity-card {
+  background: var(--card);
+  border: 1px solid #1f2937;
+  border-radius: 10px;
+  padding: 12px;
+  position: relative;
+  overflow: hidden;
+}
+.identity-card .avatar {
+  position: absolute;
+  top: -40px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  overflow: hidden;
+  box-shadow: 0 0 10px var(--primary);
+}
+.identity-card .avatar video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.identity-card h3 {
+  margin-top: 50px;
+  margin-bottom: 8px;
+  text-align: center;
+}
+.identity-card .actions {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  margin-top: 10px;
+}
+
+/* Modal */
+#aiModal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+#aiModal .modal-content {
+  background: var(--card);
+  padding: 20px;
+  border-radius: 10px;
+  width: 300px;
+}
+#quickCopyPanel {
+  position: fixed;
+  top: 0;
+  right: -260px;
+  width: 250px;
+  height: 100%;
+  background: var(--card);
+  box-shadow: -2px 0 6px rgba(0,0,0,0.6);
+  transition: right .3s ease;
+  padding: 12px;
+  overflow-y: auto;
+  z-index: 10000;
+}
+#quickCopyPanel.open { right: 0; }
+
+#helperBar {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  background: var(--card);
+  border: 1px solid var(--primary);
+  border-radius: 6px;
+  padding: 8px;
+  z-index: 9999;
+  display: none;
+}
+
+/* Floating bubble */
+#zepraBubble {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  overflow: hidden;
+  box-shadow: 0 0 10px var(--primary);
+  z-index: 9999;
+  cursor: pointer;
+}
+#zepraBubble video { width: 100%; height:100%; object-fit:cover; }
+
 .zepra-gradient {
-  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  background: linear-gradient(90deg, var(--primary), var(--secondary));
   -webkit-background-clip: text;
   color: transparent;
   text-shadow: 0 0 8px rgba(57,255,20,0.6), 0 0 8px rgba(255,230,0,0.6);
 }
-* { box-sizing: border-box; }
-body { margin: 0; font: 13px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--fg); }
-.page { padding: 12px; }
-.header { display: flex; justify-content: space-between; align-items: center; padding: 10px; background: var(--card); border-bottom: 1px solid #1f2937; }
-.title { font-weight: 600; }
-.link { color: var(--accent); cursor: pointer; text-decoration: underline; }
-.group { padding: 10px; border-bottom: 1px solid #1f2937; }
-.subtitle { margin: 6px 0 8px; color: var(--muted); font-weight: 600; }
-.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
-.row.end { justify-content: flex-end; }
-.btn { background: var(--btn); color: var(--fg); border: 1px solid #334155; border-radius: 6px; padding: 8px 10px; cursor: pointer; }
-.btn:hover { filter: brightness(1.1); }
-  .btn.primary { background: var(--accent); border-color: var(--accent); color: #0b1215; font-weight: 600; }
-  .btn.warn { background: #1f2937; border-color: var(--warn); color: var(--warn); }
-  .status { margin: 8px 10px; color: var(--muted); white-space: pre-wrap; }
-  .status.error { color: #fda4af; }
-  .previewBox { width: 100%; resize: vertical; border-radius: 6px; border: 1px solid #334155; background: #0b1220; color: var(--fg); padding: 8px; }
-  label.row { justify-content: space-between; }
-  label.row > input, label.row > select { flex: 1; margin-left: 8px; padding: 6px 8px; border-radius: 6px; border: 1px solid #334155; background: #0b1220; color: var(--fg); }
-
-/* Rotating logo circle used in login and popup headers */
-@keyframes spin { to { transform: rotate(360deg); } }
-.logo-circle {
-  width: 80px;
-  height: 80px;
-  margin: 0 auto;
-  border-radius: 50%;
-  padding: 10px;
-  background: radial-gradient(circle, rgba(57,255,20,0.3), rgba(255,230,0,0.3));
-  box-shadow: 0 0 15px rgba(57,255,20,0.5), 0 0 15px rgba(255,230,0,0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.logo-circle img {
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
-  animation: spin 8s linear infinite;
-}
-
-.thinking-icon{display:inline-block;margin-right:6px;animation:pulse 1s infinite;}
-@keyframes pulse{0%,100%{filter:drop-shadow(0 0 0 var(--accent));}50%{filter:drop-shadow(0 0 6px var(--accent));}}
