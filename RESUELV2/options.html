@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Zepra Options</title>
     <link rel="stylesheet" href="styles.css" />
+    <script src="theme.js"></script>
     <style>
       body {
         font-family: Arial, sans-serif;
@@ -180,7 +181,16 @@
     </style>
   </head>
   <body class="page">
+    <div class="header-video"><video autoplay loop muted src="src/media/key.webm"></video></div>
     <h2 class="zepra-gradient">Zepra Options</h2>
+
+    <div class="group">
+      <div class="subtitle">Theme</div>
+      <label class="row">
+        <span>Primary Neon Color</span>
+        <input type="color" id="primaryColor" />
+      </label>
+    </div>
 
     <div class="group">
       <div class="subtitle">API Keys</div>
@@ -222,6 +232,18 @@
           <option value="normal" selected>Normal</option>
           <option value="slow">Slow</option>
         </select>
+      </label>
+    </div>
+
+    <div class="group">
+      <div class="subtitle">Reasoning</div>
+      <label class="row">
+        <span>Show Answer Reasoning</span>
+        <input type="checkbox" id="showReasoning" />
+      </label>
+      <label class="row">
+        <span>Reasoning Language</span>
+        <input type="text" id="reasonLang" placeholder="English" />
       </label>
     </div>
 

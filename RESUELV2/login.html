@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <title>Login - Zepra</title>
   <link rel="stylesheet" href="styles.css" />
+  <script src="theme.js"></script>
   <style>
     body {
       margin: 0;
@@ -15,6 +16,7 @@
       background: var(--bg);
       color: var(--fg);
       font-family: 'Segoe UI', Tahoma, sans-serif;
+      overflow: hidden;
     }
     .box {
       position: relative;
@@ -60,24 +62,6 @@
       text-align: center;
       font-size: 1.6rem;
     }
-    .logo-circle {
-      width:100px;
-      height:100px;
-      margin:0 auto;
-      border-radius:50%;
-      padding:10px;
-      background:radial-gradient(circle,rgba(57,255,20,0.3),rgba(255,230,0,0.3));
-      box-shadow:0 0 15px rgba(57,255,20,0.5),0 0 15px rgba(255,230,0,0.5);
-      display:flex;
-      align-items:center;
-      justify-content:center;
-    }
-    .logo-circle img {
-      width:80px;
-      height:80px;
-      border-radius:50%;
-      animation:spin 8s linear infinite;
-    }
     input {
       width: 100%;
       margin: 8px 0;
@@ -109,7 +93,7 @@
 </head>
 <body>
   <div class="box">
-    <div class="logo-circle"><img src="icons/zepra.svg" alt="Zepra logo"></div>
+    <div id="headerWrap" class="header-video"><video id="headerVideo" autoplay loop muted src="src/media/key.webm"></video></div>
     <h1 class="zepra-gradient">Zepra</h1>
     <input type="email" id="email" placeholder="Email" />
     <input type="password" id="password" placeholder="Password" />
