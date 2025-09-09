@@ -38,7 +38,7 @@
     "history"
   ],
   "web_accessible_resources": [{
-    "resources": ["icons/*"],
+    "resources": ["icons/*", "videos/*"],
     "matches": ["<all_urls>"]
   }],
   "host_permissions": [
