@@ -733,46 +733,77 @@ function init() {
 
     const statusText = qualified ? 'QUALIFIED' : 'NOT QUALIFIED';
     const statusColor = qualified ? '#39ff14' : '#ff4444';
+    const passColor = '#39ff14';
+    const failColor = '#ff4444';
     let failMsg = '';
     if (!riskPass) failMsg = 'Your risk score is too high. You must change your connection.';
     else if (!blacklistPass) failMsg = 'Your IP is on a blacklist. You must change your connection.';
     else if (!anonymityPass) failMsg = 'Proxy/VPN/Tor detected. Please disable it and try again.';
 
-    const passIcon = '<span style="color:#39ff14;">✔️</span>';
-    const failIcon = '<span style="color:#ff4444;">❌</span>';
-    const clip = chrome.runtime.getURL(qualified ? 'src/media/zepra.webm' : 'src/media/carry.webm');
+    const particles = Array.from({ length: 12 })
+      .map((_, i) => `<span class="ipq-particle" style="--i:${i};"></span>`) 
+      .join('');
+
+    const checks = [
+      { pass: riskPass, label: 'Risk Score Assessment', icon: '🛡' },
+      { pass: blacklistPass, label: 'Blacklist Verification', icon: '👁' },
+      { pass: anonymityPass, label: 'Anonymity Detection', icon: '🌐' },
+    ];
+
+    const checklistHTML = checks
+      .map(
+        (c, i) => `
+        <div class="ipq-check" style="--i:${i};">
+          <span class="ipq-check-icon">${c.icon}</span>
+          <span class="ipq-check-label">${c.label}</span>
+          <span class="ipq-check-result" style="color:${c.pass ? passColor : failColor};">${c.pass ? '✔' : '✖'}</span>
+        </div>`
+      )
+      .join('');
 
     const html = `
       <style>
-        .ipq-wrap{display:flex;flex-direction:column;align-items:center;gap:20px;color:#e2e8f0;max-width:320px;}
-        .ipq-circle{position:relative;width:120px;height:120px;border-radius:50%;overflow:hidden;border:4px solid ${statusColor};box-shadow:0 0 15px ${statusColor};}
-        .ipq-circle video{width:100%;height:100%;object-fit:contain;}
-        .ipq-circle .text{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;}
-        .ipq-status{font-size:24px;font-weight:bold;text-shadow:0 0 10px currentColor;}
-        .ipq-score{font-size:32px;font-weight:bold;}
-        .ipq-checklist{list-style:none;padding:0;margin:0;width:100%;}
-        .ipq-checklist li{display:flex;align-items:center;gap:8px;margin:4px 0;}
-        .ipq-message{text-align:center;font-weight:bold;}
-        .ipq-details{width:100%;text-align:left;line-height:1.6;}
-        .ipq-details strong{color:#39ff14;}
+        .styled-modal-header .ipq-title-icon{margin-right:6px;}
+        .ipq-futuristic{--status:${statusColor};display:flex;flex-direction:column;align-items:center;gap:24px;color:#e2e8f0;max-width:360px;animation:ipqModalIn 0.4s cubic-bezier(.3,1,.3,1) both;}
+        @keyframes ipqModalIn{from{opacity:0;transform:translateY(40px) scale(.95);}to{opacity:1;transform:translateY(0) scale(1);}}
+        .ipq-status-circle{position:relative;width:180px;height:180px;}
+        .ipq-status-circle .ring{position:absolute;top:0;left:0;width:100%;height:100%;border:4px solid var(--status);border-radius:50%;box-shadow:0 0 20px var(--status);animation:ipqSpin 8s linear infinite,ipqPulse 2s ease-in-out infinite;}
+        .ipq-status-circle .inner{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;}
+        .ipq-status-text{font-size:24px;font-weight:bold;color:var(--status);text-shadow:0 0 10px var(--status);}
+        .ipq-score{font-size:36px;font-weight:bold;color:var(--status);}
+        @keyframes ipqSpin{from{transform:rotate(0);}to{transform:rotate(360deg);}}
+        @keyframes ipqPulse{0%,100%{box-shadow:0 0 5px var(--status);}50%{box-shadow:0 0 25px var(--status);}}
+        .ipq-particle{position:absolute;top:50%;left:50%;width:6px;height:6px;background:var(--status);border-radius:50%;filter:blur(1px);animation:ipqOrbit 3s linear infinite;animation-delay:calc(var(--i)*-0.25s);}
+        @keyframes ipqOrbit{from{transform:rotate(0deg) translateX(90px) rotate(0deg);}to{transform:rotate(360deg) translateX(90px) rotate(-360deg);}}
+        .ipq-checklist{display:flex;flex-direction:column;gap:12px;width:100%;}
+        .ipq-check{display:flex;align-items:center;justify-content:space-between;padding:12px;border:1px solid rgba(255,255,255,0.1);border-radius:10px;background:rgba(255,255,255,0.05);backdrop-filter:blur(6px);animation:ipqFadeUp 0.4s ease forwards;animation-delay:calc(var(--i)*0.1s);}
+        .ipq-check:hover{box-shadow:0 0 15px rgba(255,255,255,0.1);}
+        .ipq-check-icon{font-size:18px;margin-right:8px;}
+        .ipq-check-label{flex:1;}
+        .ipq-check-result{font-weight:bold;}
+        @keyframes ipqFadeUp{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
+        .ipq-summary{font-weight:bold;color:var(--status);text-align:center;}
+        .ipq-info{display:flex;gap:12px;width:100%;}
+        .ipq-info-card{flex:1;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);padding:10px;border-radius:8px;text-align:center;transition:box-shadow .2s;}
+        .ipq-info-card:hover{box-shadow:0 0 15px rgba(255,255,255,0.1);}
       </style>
-      <div class="ipq-wrap">
-        <div class="ipq-circle">
-          <video autoplay loop muted src="${clip}"></video>
-          <div class="text"><div class="ipq-status" style="color:${statusColor};">${statusText}</div><div class="ipq-score" style="color:${statusColor};">${risk}</div></div>
+      <div class="ipq-futuristic">
+        <div class="ipq-status-circle">
+          <div class="ring"></div>
+          ${particles}
+          <div class="inner">
+            <div class="ipq-status-text">${statusText}</div>
+            <div class="ipq-score">${risk}</div>
+          </div>
         </div>
-        <ul class="ipq-checklist">
-          <li>${riskPass ? passIcon : failIcon} Risk Score (<30)</li>
-          <li>${blacklistPass ? passIcon : failIcon} Blacklist Check (Clean)</li>
-          <li>${anonymityPass ? passIcon : failIcon} Anonymity Check (No Proxy/VPN/Tor)</li>
-        </ul>
-        <div class="ipq-message" style="color:${statusColor};">${qualified ? 'Your IP is clean and ready to use.' : failMsg}</div>
-        <div class="ipq-details" style="margin-top:10px;">
-          <div><strong>IP:</strong> ${ip} - ${flag} ${city ? city+', ' : ''}${cc}</div>
-          <div><strong>ISP:</strong> ${isp || 'Unknown'}</div>
+        <div class="ipq-checklist">${checklistHTML}</div>
+        <div class="ipq-summary">${qualified ? 'Your IP is clean and ready to use.' : failMsg}</div>
+        <div class="ipq-info">
+          <div class="ipq-info-card"><strong>IP:</strong> ${ip} - ${flag} ${city ? city+', ' : ''}${cc}</div>
+          <div class="ipq-info-card"><strong>ISP:</strong> ${isp || 'Unknown'}</div>
         </div>
       </div>`;
-    createStyledModal('IP Qualification', html);
+    createStyledModal('<span class="ipq-title-icon">🛡️</span> IP Qualification', html);
   }
 
   function showIPModal(info) {
