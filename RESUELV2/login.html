@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <title>Login - Zepra</title>
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="theme.css" />
   <script src="theme.js"></script>
   <style>
     body {
@@ -13,9 +14,6 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      background: var(--bg);
-      color: var(--fg);
-      font-family: 'Segoe UI', Tahoma, sans-serif;
       overflow: hidden;
     }
     .box {
@@ -91,8 +89,8 @@
     }
   </style>
 </head>
-<body>
-  <div class="box">
+<body class="grid-bg">
+  <div class="box fade-in">
     <div id="headerWrap" class="header-video"><video id="headerVideo" autoplay loop muted src="src/media/key.webm"></video></div>
     <h1 class="zepra-gradient">Zepra</h1>
     <input type="email" id="email" placeholder="Email" />
