@@ -28,6 +28,9 @@ const els = {
   webWidth: document.getElementById('webWidth'),
   webHeight: document.getElementById('webHeight'),
   primaryColor: document.getElementById('primaryColor'),
+  agentAutoStart: document.getElementById('agentAutoStart'),
+  agentSpeed: document.getElementById('agentSpeed'),
+  agentReset: document.getElementById('agentReset'),
 };
 
 const DEFAULT_SITES = [
@@ -59,6 +62,7 @@ async function load() {
       'showReasoning',
       'reasonLang',
     ]);
+    const sync = await chrome.storage.sync.get(['agentSettings']);
 
     els.cerebrasKey.value    = s.cerebrasApiKey || '';
     els.cerebrasModel.value  = s.cerebrasModel || 'gpt-oss-120b';
@@ -72,6 +76,10 @@ async function load() {
     els.reasonLang.value      = s.reasonLang || '';
     els.primaryColor.value    = s.primaryColor || '#39ff14';
     if (s.primaryColor) document.documentElement.style.setProperty('--accent', s.primaryColor);
+
+    const ag = sync.agentSettings || { autoStart:false, speed:'normal' };
+    els.agentAutoStart.checked = ag.autoStart || false;
+    els.agentSpeed.value = ag.speed || 'normal';
 
     await loadPrompts();
     await loadSites();
@@ -236,6 +244,7 @@ els.save?.addEventListener('click', async () => {
       showReasoning:     els.showReasoning.checked,
       reasonLang:        els.reasonLang.value.trim(),
     });
+    await chrome.storage.sync.set({ agentSettings: { autoStart: els.agentAutoStart.checked, speed: els.agentSpeed.value } });
     document.documentElement.style.setProperty('--accent', els.primaryColor.value);
     notify('Saved');
     console.log('Settings saved successfully');
@@ -251,9 +260,17 @@ els.clear?.addEventListener('click', async () => {
   notify('Cleared');
 });
 
+const DEFAULT_AGENT = { autoStart:false, speed:'normal' };
+els.agentReset?.addEventListener('click', async () => {
+  els.agentAutoStart.checked = DEFAULT_AGENT.autoStart;
+  els.agentSpeed.value = DEFAULT_AGENT.speed;
+  await chrome.storage.sync.set({ agentSettings: DEFAULT_AGENT });
+  notify('Agent settings reset');
+});
+
 els.test?.addEventListener('click', async () => {
   try {
-    notify('Testing…');
+    notify('Testing...');
     // Simple test via Cerebras backend
     const res = await chrome.runtime.sendMessage({
       type: 'CEREBRAS_GENERATE',
@@ -269,7 +286,7 @@ els.test?.addEventListener('click', async () => {
 
 els.testIpdata?.addEventListener('click', async () => {
   try {
-    notify('Testing ipdata…');
+    notify('Testing ipdata...');
     const key = els.ipdataKey.value.trim();
     if (!key) { notify('Enter API key', true); return; }
     const res = await chrome.runtime.sendMessage({ type: 'TEST_IPDATA', key });

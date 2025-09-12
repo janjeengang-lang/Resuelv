@@ -15,7 +15,17 @@
     navCustom: document.getElementById('navCustom'),
     navIdent: document.getElementById('navIdent'),
     navOptions: document.getElementById('navOptions'),
+    agentStatus: document.getElementById('agentStatus'),
+    stopAgent: document.getElementById('stopAgent'),
   };
+
+let agentSettings = { autoStart:false, speed:'normal' };
+chrome.storage.sync.get('agentSettings', r => {
+  if(r.agentSettings) agentSettings = { ...agentSettings, ...r.agentSettings };
+});
+chrome.storage.onChanged.addListener((chg, area)=>{
+  if(area==='sync' && chg.agentSettings){ agentSettings = { ...agentSettings, ...(chg.agentSettings.newValue||{}) }; }
+});
 
 (async function initSession(){
   const { loggedIn, userEmail, loginTime } = await chrome.storage.local.get(['loggedIn','userEmail','loginTime']);
@@ -124,6 +134,35 @@ for (const id of Object.keys(btnMap)) {
 }
 
 updateButtonVisibility();
+
+
+els.stopAgent?.addEventListener('click', async () => {
+  const tab = await getActiveTab();
+  await ensureContentScript(tab.id);
+  await chrome.tabs.sendMessage(tab.id, { type: 'COPILOT_STOP' });
+  await chrome.storage.local.set({ copilotActive: false });
+  updateAgentUI(false);
+});
+
+async function initAgentState() {
+  const { copilotActive } = await chrome.storage.local.get('copilotActive');
+  updateAgentUI(!!copilotActive);
+}
+
+function updateAgentUI(active) {
+  if (active) {
+    els.agentStatus.classList.remove('hidden');
+  } else {
+    els.agentStatus.classList.add('hidden');
+  }
+}
+
+initAgentState();
+chrome.storage.onChanged.addListener(chg => {
+  if (chg.copilotActive) {
+    updateAgentUI(chg.copilotActive.newValue);
+  }
+});
 
   els.navOptions?.addEventListener('click', () => chrome.runtime.openOptionsPage());
   els.navCustom?.addEventListener('click', async () => {

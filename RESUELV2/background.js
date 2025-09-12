@@ -263,14 +263,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         case 'GENERATE_REAL_ADDRESS': {
           const { country = '', state = '', city = '' } = message;
-          const prompt = `Generate a real mailing address based on the following details.\nCountry: ${country}\nState/Province: ${state}\nCity/Zip Code: ${city}\nRespond ONLY with a JSON object: {"address_1": "", "address_2": "", "zip_code": ""}\n${STRICT_JSON}`;
+          const prompt = `Generate a real mailing address based on the following details.\nCountry: ${country}\nState/Province: ${state}\nCity/Zip Code: ${city}\nRespond ONLY with a JSON object: {"address1": "", "address2": "", "zipCode": ""}\n${STRICT_JSON}`;
           const result = await callCerebras(prompt);
           sendResponse({ ok: true, result });
           break;
         }
         case 'ANALYZE_FORM': {
           const { html } = message;
-          const prompt = `Analyze the following HTML form and return a JSON object mapping CSS selectors to identity field keys (identityName, profilePictureUrl, fullName, firstName, lastName, age, email, username, password, phone, address1, address2, city, state, zipCode, country, macAddress, companyName, companyIndustry, companySize, companyAnnualRevenue, companyWebsite, companyAddress). Only include selectors for fields that clearly match.\nHTML:\n${html}\n${STRICT_JSON}`;
+          const prompt = `Analyze the following HTML form and return a JSON object mapping each question text to a CSS selector for its corresponding input field. Only include fields that clearly map.\\nHTML:\\n${html}\\n${STRICT_JSON}`;
           const result = await callCerebras(prompt);
           sendResponse({ ok: true, result });
           break;
