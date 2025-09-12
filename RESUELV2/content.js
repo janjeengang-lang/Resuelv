@@ -4,7 +4,6 @@
 // - Fallback image crop
 // - Type text into focused field (no humanize; speed only)
 // - Floating bubble with rainbow modal
-// (Video dubbing feature removed)
 
 function init() {
   if (window.zepraInit) return;
@@ -19,13 +18,25 @@ function init() {
     selBtn: null,
     lastFocused: null,
     lastMouse: { x: 20, y: 20 },
-    fillIcon: null
+    fillIcon: null,
+    progressEl: null
   };
 
+  let agentSettings = { autoStart:false, speed:'normal' };
   let customPrompts = [];
-  chrome.storage.sync.get('customPrompts', r => { customPrompts = r.customPrompts || []; });
+  chrome.storage.sync.get(['customPrompts','agentSettings'], r => {
+    customPrompts = r.customPrompts || [];
+    if(r.agentSettings) agentSettings = { ...agentSettings, ...r.agentSettings };
+    if(agentSettings.autoStart){
+      showAgentPanel();
+      startCopilot();
+    }
+  });
   chrome.storage.onChanged.addListener((chg, area) => {
-    if(area === 'sync' && chg.customPrompts){ customPrompts = chg.customPrompts.newValue || []; }
+    if(area === 'sync'){
+      if(chg.customPrompts){ customPrompts = chg.customPrompts.newValue || []; }
+      if(chg.agentSettings){ agentSettings = { ...agentSettings, ...(chg.agentSettings.newValue||{}) }; }
+    }
   });
 
   // Identity handling
@@ -67,6 +78,17 @@ function init() {
     }
   });
   loadIdentity();
+
+  let answerHistory = {};
+  chrome.storage.local.get('answerHistory', r => { answerHistory = r.answerHistory || {}; });
+  chrome.storage.onChanged.addListener((chg, area)=>{
+    if(area==='local' && chg.answerHistory){ answerHistory = chg.answerHistory.newValue || {}; }
+  });
+
+  async function saveHistory(question, answer){
+    answerHistory[question] = answer;
+    await chrome.storage.local.set({ answerHistory });
+  }
 
   function addFieldToIdentity(btn, value, key, success='Saved!'){
     chrome.storage.local.get('identities', ({identities=[]})=>{
@@ -323,6 +345,12 @@ function init() {
         0%, 100% { opacity: 0.3; transform: scale(1); }
         50% { opacity: 0.7; transform: scale(1.1); }
       }
+
+      @keyframes agentPulse {
+        0%,100% { box-shadow: 0 0 10px #39ff14, 0 0 20px #ffe600; }
+        50% { box-shadow: 0 0 20px #39ff14, 0 0 40px #ffe600; }
+      }
+      #zepra-bubble.agent-running { animation: agentPulse 1s ease-in-out infinite; }
     `;
     
     document.head.appendChild(style);
@@ -408,6 +436,10 @@ function init() {
           <div class="menu-item" data-action="clear-context">
             <span class="menu-icon">🧹</span>
             <span class="menu-text">Clear AI Context</span>
+          </div>
+          <div class="menu-item" data-action="surveys-agent">
+            <span class="menu-icon">🕹️</span>
+            <span class="menu-text">Surveys Agent</span>
           </div>
           <div class="menu-item" data-action="ip-info">
             <span class="menu-icon">🌐</span>
@@ -600,6 +632,9 @@ function init() {
         await chrome.storage.local.set({ contextQA: [] });
         showNotification('AI context cleared');
         break;
+      case 'surveys-agent':
+        showAgentPanel();
+        break;
       case 'ip-info':
         try {
           const response = await chrome.runtime.sendMessage({ type: 'GET_PUBLIC_IP' });
@@ -640,6 +675,32 @@ function init() {
         toggleIdentityPanel();
         break;
     }
+  }
+
+  function showAgentPanel(){
+    if(agentPanel) return;
+    agentPanel = document.createElement('div');
+    agentPanel.id = 'zepra-agent-panel';
+    agentPanel.innerHTML = `
+      <div class="agent-panel">
+        <h3>Surveys Agent</h3>
+        <div id="agentStatus">Idle</div>
+        <div class="agent-controls">
+          <button id="agentStart">Start</button>
+          <button id="agentPause">Pause</button>
+          <button id="agentResume">Resume</button>
+        </div>
+      </div>`;
+    agentPanel.style.cssText = 'position:fixed;top:0;right:0;width:200px;height:100%;background:#000;border-left:2px solid #39ff14;color:#e2e8f0;z-index:2147483647;padding:10px;box-shadow:0 0 20px #39ff14;';
+    document.body.appendChild(agentPanel);
+    agentPanel.querySelector('#agentStart').addEventListener('click', startCopilot);
+    agentPanel.querySelector('#agentPause').addEventListener('click', pauseCopilot);
+    agentPanel.querySelector('#agentResume').addEventListener('click', resumeCopilot);
+  }
+
+  function updateAgentPanel(status){
+    const el = agentPanel?.querySelector('#agentStatus');
+    if(el) el.textContent = status;
   }
 
   function showZebraVPSModal(){
@@ -923,9 +984,9 @@ function init() {
       try {
         const obj = JSON.parse(text);
         return {
-          a1: obj.address_1 || '',
-          a2: obj.address_2 || '',
-          zip: obj.zip_code || ''
+          a1: obj.address1 || '',
+          a2: obj.address2 || '',
+          zip: obj.zipCode || ''
         };
       } catch (e) {
         return { a1: '', a2: '', zip: '' };
@@ -1678,15 +1739,12 @@ function init() {
           }
         });
 
-        modal.querySelector('.btn-write-all').addEventListener('click', async () => {
+        modal.querySelector('.btn-write-all').addEventListener('click', () => {
           closeModal();
           if (useReason) {
-            await typeAnswer(answer, { skipCountdown: true });
+            startAnswerCounter([answer]);
           } else {
-            for (const part of parsed) {
-              await new Promise(r => setTimeout(r, 3000));
-              await typeAnswer(part, { skipCountdown: true });
-            }
+            startAnswerCounter(parsed);
           }
         });
 
@@ -1801,10 +1859,42 @@ function init() {
         reason: String(obj?.reason || '').trim()
       };
     }
+    if (text.includes('|||')) {
+      return text.split('|||').map(a => a.trim()).filter(Boolean);
+    }
     if (obj && Array.isArray(obj.answers)) {
       return obj.answers.map(a => String(a).trim());
     }
     return [text.trim()];
+  }
+
+  function startAnswerCounter(list){
+    if(!Array.isArray(list) || !list.length) return;
+    let idx = 0;
+    const counter = document.createElement('div');
+    counter.id = 'zepra-answer-counter';
+    counter.textContent = `Answer 1 of ${list.length}`;
+    counter.style.cssText = 'position:fixed;top:10px;left:10px;background:#0b1220;color:#39ff14;padding:6px 10px;border:1px solid #39ff14;border-radius:6px;z-index:2147483647;font-size:14px;';
+    document.body.appendChild(counter);
+
+    const handler = async (e) => {
+      if(idx >= list.length) { cleanup(); return; }
+      const el = e.target;
+      if(el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')){
+        STATE.lastFocused = el;
+        await typeAnswer(list[idx], { skipCountdown: true });
+        idx++;
+        if(idx >= list.length) { cleanup(); }
+        else counter.textContent = `Answer ${idx+1} of ${list.length}`;
+      }
+    };
+
+    function cleanup(){
+      document.removeEventListener('focus', handler, true);
+      counter.remove();
+    }
+
+    document.addEventListener('focus', handler, true);
   }
 
   function isThinkingModel(model){
@@ -1827,7 +1917,7 @@ function init() {
     if (withReason) {
       rules += `- Final response MUST be JSON: {"answer": "", "reason": ""}. Reason must be in ${reasonLang}.\n`;
     } else {
-      rules += `- Respond ONLY with JSON: {"answers": ["answer1", "answer2", ...]}.\n`;
+      rules += `- Provide one or more short answers separated by the delimiter ||| and do not number them. Return plain text only.\n`;
     }
     if (thinking) rules += '- After any reasoning, end with the JSON object.\n';
     rules += '- Language: match the question language.';
@@ -1852,6 +1942,484 @@ function init() {
     list.push(entry);
     while (list.length > 10) list.shift();
     await chrome.storage.local.set({ contextQA: list });
+  }
+
+  /* AI Co-Pilot ------------------------------------------------------- */
+  let copilotActive = false;
+  let copilotPaused = false;
+  let agentPanel = null;
+
+  function isVisible(el) {
+    return !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+  }
+
+  function getLabelText(el) {
+    if (el.labels && el.labels[0]) return el.labels[0].textContent.trim();
+    if (el.id) {
+      const lbl = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+      if (lbl) return lbl.textContent.trim();
+    }
+    const parent = el.closest('label');
+    return parent ? parent.textContent.trim() : '';
+  }
+
+  function getGroupQuestionText(el) {
+    const fs = el.closest('fieldset');
+    if (fs) {
+      const legend = fs.querySelector('legend');
+      if (legend) return legend.textContent.trim();
+    }
+    let label = getLabelText(el);
+    if (label) return label;
+    let parent = el.parentElement;
+    while (parent) {
+      const prev = parent.previousElementSibling;
+      if (prev && prev.textContent.trim()) return prev.textContent.trim();
+      parent = parent.parentElement;
+    }
+    return el.name || 'Question';
+  }
+
+  function collectQuestions() {
+    const questions = [];
+    const radioProcessed = new Set();
+    document.querySelectorAll('input[type=radio]').forEach(r => {
+      if (!isVisible(r) || radioProcessed.has(r.name)) return;
+      const group = Array.from(document.querySelectorAll(`input[type=radio][name="${CSS.escape(r.name)}"]`));
+      const options = group.map(o => ({ text: getLabelText(o) || o.value, value: o.value, el: o }));
+      questions.push({ type: 'radio', question: getGroupQuestionText(r), options });
+      radioProcessed.add(r.name);
+    });
+    const checkProcessed = new Set();
+    document.querySelectorAll('input[type=checkbox]').forEach(c => {
+      if (!isVisible(c) || checkProcessed.has(c.name)) return;
+      const group = c.name ? Array.from(document.querySelectorAll(`input[type=checkbox][name="${CSS.escape(c.name)}"]`)) : [c];
+      const options = group.map(o => ({ text: getLabelText(o) || o.value, value: o.value, el: o }));
+      questions.push({ type: 'checkbox', question: getGroupQuestionText(c), options });
+      if (c.name) checkProcessed.add(c.name);
+    });
+    document.querySelectorAll('select').forEach(s => {
+      if (!isVisible(s)) return;
+      const options = Array.from(s.options).map(o => ({ text: o.textContent.trim(), value: o.value, el: o }));
+      const type = s.multiple ? 'select-multiple' : 'select';
+      questions.push({ type, question: getLabelText(s) || 'Select', el: s, options });
+    });
+    document.querySelectorAll('input[type=range]').forEach(r => {
+      if (!isVisible(r)) return;
+      questions.push({ type: 'range', question: getLabelText(r) || 'Range', el: r, min: r.min || '0', max: r.max || '100' });
+    });
+    document.querySelectorAll('textarea, input[type=text], input[type=number], input[type=email], input[type=date]').forEach(t => {
+      if (!isVisible(t)) return;
+      let type = 'text';
+      if(t.type==='number') type='number';
+      else if(t.type==='email') type='email';
+      else if(t.type==='date') type='date';
+      questions.push({ type, question: getLabelText(t) || t.type, el: t, min: t.min, max: t.max });
+    });
+    return questions;
+  }
+
+  async function senseQuestions(){
+    STATE.lastSenseLayer = 'ai';
+    const form = document.querySelector('form');
+    if(form){
+      try{
+        const resp = await chrome.runtime.sendMessage({type:'ANALYZE_FORM', html: form.outerHTML});
+        const map = JSON.parse(resp.result);
+        const qs = [];
+        for(const [question, selector] of Object.entries(map || {})){
+          const el = document.querySelector(selector);
+          if(!el) continue;
+          const tag = (el.tagName||'').toLowerCase();
+          if(tag === 'input'){
+            const t = (el.type||'').toLowerCase();
+            if(t === 'radio' || t === 'checkbox'){
+              const group = el.name ? Array.from(document.querySelectorAll(`input[type=${t}][name="${CSS.escape(el.name)}"]`)) : [el];
+              const options = group.map(o=>({text: getLabelText(o) || o.value, value:o.value, el:o}));
+              qs.push({type:t, question, options});
+            }else if(t === 'range'){
+              qs.push({type:'range', question, el, min: el.min||'0', max: el.max||'100'});
+            }else if(t === 'number'){
+              qs.push({type:'number', question, el, min: el.min, max: el.max});
+            }else if(t === 'email'){
+              qs.push({type:'email', question, el});
+            }else if(t === 'date'){
+              qs.push({type:'date', question, el});
+            }else{
+              qs.push({type:'text', question, el});
+            }
+          }else if(tag === 'select'){
+            const options = Array.from(el.options).map(o=>({text:o.textContent.trim(), value:o.value, el:o}));
+            const type = el.multiple ? 'select-multiple' : 'select';
+            qs.push({type, question, el, options});
+          }else if(tag === 'textarea'){
+            qs.push({type:'text', question, el});
+          }
+        }
+        if(qs.length){ return qs; }
+      }catch(e){/* layer1 failed */}
+    }
+    STATE.lastSenseLayer = 'dom';
+    const qs = collectQuestions();
+    if(qs.length) return qs;
+    STATE.lastSenseLayer = 'ocr';
+    try{ await startFullPageOCR(); }catch(e){}
+    return [];
+  }
+
+  function buildCopilotPrompt(questions, identity, ctx) {
+    const ctxLines = (ctx || []).map(c => `Q: ${c.q}\nA: ${c.a}`).join('\n');
+    let qLines = '';
+    questions.forEach((q, i) => {
+      const num = i + 1;
+      const attention = 'First, analyze this question. If it is a direct instruction or an attention check (e.g., "select the color blue"), follow the instruction exactly. Otherwise, answer based on your persona.';
+      if (q.type === 'radio' || q.type === 'select') {
+        qLines += `Q${num}: ${q.question}\nOptions: [${q.options.map(o => o.text).join(', ')}]\n${attention}\nRespond with a JSON object: {"choice":"Chosen Option Text"}\n\n`;
+      } else if (q.type === 'checkbox' || q.type === 'select-multiple') {
+        qLines += `Q${num}: ${q.question}\nOptions: [${q.options.map(o => o.text).join(', ')}]\n${attention}\nRespond with a JSON object: {"choices":["Option1","Option2"]}\n\n`;
+      } else if (q.type === 'range') {
+        qLines += `Q${num}: ${q.question}\n${attention}\nRespond with a JSON object: {"value": ${q.min}-${q.max}}\n\n`;
+      } else if (q.type === 'number') {
+        qLines += `Q${num}: ${q.question}\n${attention}\nRespond with a JSON object: {"value": ${q.min || '0'}-${q.max || '100'}}\n\n`;
+      } else if (q.type === 'email') {
+        qLines += `Q${num}: ${q.question}\n${attention}\nRespond with a JSON object: {"answer": "user@example.com"}\n\n`;
+      } else if (q.type === 'date') {
+        qLines += `Q${num}: ${q.question}\n${attention}\nRespond with a JSON object: {"value": "YYYY-MM-DD"}\n\n`;
+      } else {
+        qLines += `Q${num}: ${q.question}\n${attention}\nRespond with a JSON object: {"answer":"..."}\n\n`;
+      }
+    });
+    return `Active Identity:\n${JSON.stringify(identity || {})}\nLast 10 Q&A:\n${ctxLines || 'None'}\nProvide answers for the following questions. Return a single JSON object whose keys are "1", "2", ... corresponding to each question.\n${qLines}CRITICAL: Your response MUST be ONLY the JSON object.`;
+  }
+
+  async function runConsistencyCheck(question, decision) {
+    const ctx = await getContext();
+    const answer = (decision.answer || decision.choice || (decision.choices || []).join(',') || decision.value || '').toString();
+    const prev = ctx.find(c => c.q === question);
+    if (prev && prev.a && prev.a.trim().toLowerCase() !== answer.trim().toLowerCase()) return false;
+    const globalPrev = answerHistory[question];
+    if (globalPrev && normalizeText(globalPrev) !== normalizeText(answer)) return false;
+    if (activeIdentity) {
+      const ql = question.toLowerCase();
+      if (activeIdentity.age && ql.includes('age')) {
+        const val = parseInt(answer, 10);
+        if (!isNaN(val) && Math.abs(val - parseInt(activeIdentity.age, 10)) > 2) return false;
+      }
+      if (activeIdentity.gender && (ql.includes('gender') || ql.includes('sex'))) {
+        if (activeIdentity.gender.toLowerCase() !== answer.trim().toLowerCase()) return false;
+      }
+      if (activeIdentity.country && ql.includes('country')) {
+        if (normalizeText(activeIdentity.country) !== normalizeText(answer)) return false;
+      }
+      if (activeIdentity.city && ql.includes('city')) {
+        if (normalizeText(activeIdentity.city) !== normalizeText(answer)) return false;
+      }
+      if (activeIdentity.companyName && (ql.includes('company') || ql.includes('employer'))) {
+        if (normalizeText(activeIdentity.companyName) !== normalizeText(answer)) return false;
+      }
+    }
+    return true;
+  }
+
+  function normalizeText(t){
+    return (t || '').toString().toLowerCase().trim().replace(/\s+/g, ' ');
+  }
+
+  function levenshtein(a,b){
+    const m=[];a=a.split('');b=b.split('');
+    for(let i=0;i<=b.length;i++){m[i]=[i];}
+    for(let j=0;j<=a.length;j++){m[0][j]=j;}
+    for(let i=1;i<=b.length;i++){
+      for(let j=1;j<=a.length;j++){
+        m[i][j]=b[i-1]==a[j-1]?m[i-1][j-1]:Math.min(m[i-1][j-1]+1,m[i][j-1]+1,m[i-1][j]+1);
+      }
+    }
+    return m[b.length][a.length];
+  }
+
+  function findBestOption(options, target){
+    const normTarget = normalizeText(target);
+    let opt = options.find(o => normalizeText(o.text) === normTarget || normalizeText(o.value) === normTarget);
+    if(opt) return opt;
+    opt = options.find(o => levenshtein(normalizeText(o.text), normTarget) < 2);
+    if(opt) return opt;
+    return options.find(o => normalizeText(o.value) === normTarget) || null;
+  }
+
+  function showProgressOverlay(total){
+    removeProgressOverlay();
+    const el = document.createElement('div');
+    el.className = 'zepra-progress';
+    el.textContent = `Answering 0 of ${total}`;
+    document.body.appendChild(el);
+    STATE.progressEl = el;
+  }
+
+  function updateProgressOverlay(index, total){
+    if(STATE.progressEl) STATE.progressEl.textContent = `Answering ${index} of ${total}`;
+  }
+
+  function removeProgressOverlay(){
+    if(STATE.progressEl){ STATE.progressEl.remove(); STATE.progressEl=null; }
+  }
+
+  async function applyCopilotDecisions(decisions, questions) {
+    const fallbacks = [];
+    showProgressOverlay(questions.length);
+    for (let i = 0; i < questions.length; i++) {
+      updateProgressOverlay(i+1, questions.length);
+      const key = String(i + 1);
+      const dec = decisions[key];
+      if (!dec) continue;
+      const q = questions[i];
+      if (!(await runConsistencyCheck(q.question, dec))) continue;
+      let applied = false;
+      if (q.type === 'text') {
+        try {
+          q.el.focus();
+          await typeIntoFocusedElement(dec.answer || '', { speed: agentSettings.speed });
+          q.el.classList.add('zepra-filled');
+          setTimeout(()=>q.el.classList.remove('zepra-filled'),2000);
+          await saveContext({ q: q.question, a: dec.answer || '' });
+          await saveHistory(q.question, dec.answer || '');
+          applied = true;
+        } catch {}
+      } else if (q.type === 'radio') {
+        const opt = findBestOption(q.options, dec.choice);
+        if (opt) {
+          opt.el.click();
+          await saveContext({ q: q.question, a: opt.text });
+          await saveHistory(q.question, opt.text);
+          opt.el.classList.add('zepra-filled');
+          setTimeout(()=>opt.el.classList.remove('zepra-filled'),2000);
+          applied = true;
+        }
+      } else if (q.type === 'checkbox') {
+        const choices = (dec.choices || []).map(normalizeText);
+        const matched = q.options.filter(o => {
+          const t = normalizeText(o.text); const v = normalizeText(o.value);
+          return choices.some(c => c===t || c===v || levenshtein(t,c)<2);
+        });
+        if (matched.length) {
+          matched.forEach(o => {
+            o.el.click();
+            o.el.classList.add('zepra-filled');
+            setTimeout(()=>o.el.classList.remove('zepra-filled'),2000);
+          });
+          const ans = matched.map(m=>m.text).join(', ');
+          await saveContext({ q: q.question, a: ans });
+          await saveHistory(q.question, ans);
+          applied = true;
+        }
+      } else if (q.type === 'select') {
+        const opt = findBestOption(q.options, dec.choice);
+        if (opt) {
+          q.el.value = opt.el.value;
+          q.el.dispatchEvent(new Event('change', { bubbles: true }));
+          q.el.classList.add('zepra-filled');
+          setTimeout(()=>q.el.classList.remove('zepra-filled'),2000);
+          await saveContext({ q: q.question, a: opt.text });
+          await saveHistory(q.question, opt.text);
+          applied = true;
+        }
+      } else if (q.type === 'select-multiple') {
+        const choices = (dec.choices || []).map(normalizeText);
+        const matched = q.options.filter(o => {
+          const t = normalizeText(o.text); const v = normalizeText(o.value);
+          return choices.some(c => c===t || c===v || levenshtein(t,c)<2);
+        });
+        if (matched.length) {
+          matched.forEach(o=>{ o.el.selected = true; });
+          q.el.dispatchEvent(new Event('change',{bubbles:true}));
+          q.el.classList.add('zepra-filled');
+          setTimeout(()=>q.el.classList.remove('zepra-filled'),2000);
+          const ans = matched.map(m=>m.text).join(', ');
+          await saveContext({ q: q.question, a: ans });
+          await saveHistory(q.question, ans);
+          applied = true;
+        }
+      } else if (q.type === 'range') {
+        if (dec.value !== undefined) {
+          q.el.value = dec.value;
+          q.el.dispatchEvent(new Event('input', { bubbles: true }));
+          q.el.classList.add('zepra-filled');
+          setTimeout(()=>q.el.classList.remove('zepra-filled'),2000);
+          await saveContext({ q: q.question, a: String(dec.value) });
+          await saveHistory(q.question, String(dec.value));
+          applied = true;
+        }
+      } else if (q.type === 'number') {
+        if (dec.value !== undefined) {
+          q.el.value = dec.value;
+          q.el.dispatchEvent(new Event('input',{bubbles:true}));
+          q.el.classList.add('zepra-filled');
+          setTimeout(()=>q.el.classList.remove('zepra-filled'),2000);
+          await saveContext({ q:q.question, a:String(dec.value) });
+          await saveHistory(q.question, String(dec.value));
+          applied = true;
+        }
+      } else if (q.type === 'email' || q.type === 'date') {
+        const val = dec.value || dec.answer || '';
+        try {
+          q.el.focus();
+          await typeIntoFocusedElement(val, { speed: agentSettings.speed });
+          q.el.classList.add('zepra-filled');
+          setTimeout(()=>q.el.classList.remove('zepra-filled'),2000);
+          await saveContext({ q: q.question, a: val });
+          await saveHistory(q.question, val);
+          applied = true;
+        } catch {}
+      }
+      if (!applied) {
+        let ans = '';
+        if (q.type === 'text') ans = dec.answer || '';
+        else if (q.type === 'radio' || q.type === 'select') ans = dec.choice || '';
+        else if (q.type === 'checkbox' || q.type === 'select-multiple') ans = (dec.choices || []).join(', ');
+        else if (q.type === 'range' || q.type === 'number') ans = String(dec.value);
+        else if (q.type === 'email' || q.type === 'date') ans = dec.value || dec.answer || '';
+        fallbacks.push({ question: q.question, answer: ans });
+      }
+      await new Promise(r => setTimeout(r, 300));
+    }
+    removeProgressOverlay();
+    return fallbacks;
+  }
+
+  function findNextButton() {
+    const words = ['next','next page','continue','submit','go','proceed','siguiente','continuar','guardar','avanti','weiter','suivant','следующий','بعد','التالي','متابعة'];
+    const candidates = Array.from(document.querySelectorAll('button, input[type=button], input[type=submit], a'));
+    const match = (el) => {
+      const texts = [(el.innerText||''),(el.value||''),el.getAttribute('aria-label')||'',el.getAttribute('title')||'',el.getAttribute('data-testid')||''];
+      const norm = texts.map(t=>t.trim().toLowerCase());
+      return words.some(w=>norm.some(t=>t.includes(w)));
+    };
+    let btn = candidates.find(b => match(b) && isVisible(b) && !b.disabled);
+    if (btn) return btn;
+    const form = document.querySelector('form');
+    if (form){
+      btn = form.querySelector('button[type=submit], input[type=submit]');
+      if(btn && isVisible(btn) && !btn.disabled) return btn;
+    }
+    return null;
+  }
+
+  let copilotHelpEl = null;
+  async function writeFromHelp(ans){
+    if(!STATE.lastFocused){ alert('Click a field on the page first'); return; }
+    await showCountdown(3);
+    await typeIntoFocusedElement(ans, { speed:'normal' });
+  }
+  function showCopilotHelpModal(items){
+    if(copilotHelpEl) copilotHelpEl.remove();
+    copilotHelpEl = document.createElement('div');
+    copilotHelpEl.id = 'zepra-copilot-help';
+    copilotHelpEl.innerHTML = `<p>This page is protected or complex. I've prepared the answers for you to fill in manually.</p>` +
+      items.map((it,i)=>`<div class="copilot-item"><strong>Q${i+1}:</strong> ${it.question}<br><em>${it.answer}</em> <button data-ans="${i}">Write Here</button></div>`).join('');
+    const style = document.createElement('style');
+    style.textContent = `#zepra-copilot-help{position:fixed;top:10px;right:10px;background:#0b1220;color:#e2e8f0;padding:12px;border:1px solid #39ff14;border-radius:8px;font-size:14px;z-index:2147483647;max-width:300px;}`+
+      `#zepra-copilot-help button{margin-left:8px;background:#22c55e;border:none;color:#000;padding:2px 4px;border-radius:4px;cursor:pointer;}`+
+      `#zepra-copilot-help .copilot-item{margin-top:6px;}`+
+      `#zepra-copilot-help p{margin:0 0 6px 0;font-size:13px;}`;
+    copilotHelpEl.appendChild(style);
+    document.body.appendChild(copilotHelpEl);
+    copilotHelpEl.querySelectorAll('button[data-ans]').forEach(btn=>{
+      btn.addEventListener('click',()=>{
+        const ans = items[Number(btn.dataset.ans)].answer;
+        writeFromHelp(ans);
+      });
+    });
+  }
+
+  async function getDecisionsWithRetry(prompt, max=3){
+    let lastErr;
+    for(let attempt=1; attempt<=max; attempt++){
+      try{
+        const resp = await chrome.runtime.sendMessage({ type: 'CEREBRAS_GENERATE', prompt });
+        return JSON.parse(resp.result);
+      }catch(e){
+        lastErr = e;
+        console.error('AI generation attempt failed', e);
+        await sleep(500 * attempt);
+      }
+    }
+    const retry = confirm('AI error: ' + (lastErr?.message || 'Unknown') + '\nRetry?');
+    if(retry) return getDecisionsWithRetry(prompt, max);
+    updateAgentPanel('Error');
+    showNotification('AI failed: ' + (lastErr?.message || 'Unknown error'));
+    showCopilotHelpModal([]);
+    throw lastErr;
+  }
+
+  async function startCopilot() {
+    if (copilotActive) return;
+    copilotActive = true;
+    copilotPaused = false;
+    STATE.bubble?.classList.add('agent-running');
+    updateAgentPanel('Running');
+    await chrome.storage.local.set({ copilotActive: true });
+    try {
+      while (copilotActive) {
+        if (copilotPaused) { await sleep(500); continue; }
+        let domChanged = false;
+        const observer = new MutationObserver(()=>{ domChanged = true; });
+        observer.observe(document.body,{childList:true,subtree:true});
+        const questions = await senseQuestions();
+        observer.disconnect();
+        if (domChanged) { continue; }
+        if (!questions.length) { showCopilotHelpModal([]); break; }
+        const ctx = await getContext();
+        const prompt = buildCopilotPrompt(questions, activeIdentity, ctx);
+        let decisions;
+        try { decisions = await getDecisionsWithRetry(prompt); }
+        catch (e) { break; }
+        const fallbacks = await applyCopilotDecisions(decisions, questions);
+        if (fallbacks.length) { showCopilotHelpModal(fallbacks); break; }
+        const next = findNextButton();
+        if (next) {
+          const nav = waitForDomChange();
+          next.click();
+          await nav;
+        } else break;
+      }
+    } finally {
+      copilotActive = false;
+      copilotPaused = false;
+      STATE.bubble?.classList.remove('agent-running');
+      updateAgentPanel('Idle');
+      await chrome.storage.local.set({ copilotActive: false });
+    }
+  }
+
+  function waitForDomChange(timeout=5000){
+    return new Promise(resolve=>{
+      const obs = new MutationObserver(()=>{ obs.disconnect(); resolve(); });
+      obs.observe(document.body,{childList:true,subtree:true});
+      setTimeout(()=>{obs.disconnect(); resolve();}, timeout);
+    });
+  }
+
+  async function stopCopilot() {
+    copilotActive = false;
+    copilotPaused = false;
+    STATE.bubble?.classList.remove('agent-running');
+    updateAgentPanel('Idle');
+    removeProgressOverlay();
+    await chrome.storage.local.set({ copilotActive: false });
+  }
+
+  function pauseCopilot(){
+    if(!copilotActive) return;
+    copilotPaused = true;
+    STATE.bubble?.classList.remove('agent-running');
+    updateAgentPanel('Paused');
+    removeProgressOverlay();
+  }
+
+  function resumeCopilot(){
+    if(!copilotActive){ startCopilot(); return; }
+    copilotPaused = false;
+    STATE.bubble?.classList.add('agent-running');
+    updateAgentPanel('Running');
   }
 
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -1893,6 +2461,16 @@ function init() {
           }
           case 'SCROLL_TO': {
             window.scrollTo(0, msg.y || 0);
+            sendResponse({ ok: true });
+            break;
+          }
+          case 'COPILOT_START': {
+            startCopilot();
+            sendResponse({ ok: true });
+            break;
+          }
+          case 'COPILOT_STOP': {
+            await stopCopilot();
             sendResponse({ ok: true });
             break;
           }
@@ -2089,11 +2667,19 @@ function init() {
       from { transform: translateX(-50%) translateY(-20px); opacity: 0; }
       to { transform: translateX(-50%) translateY(0); opacity: 1; }
     }
-    
+
     @keyframes slideUp {
       from { transform: translateX(-50%) translateY(0); opacity: 1; }
       to { transform: translateX(-50%) translateY(-20px); opacity: 0; }
     }
+
+    @keyframes zepraFilled {
+      from { box-shadow: 0 0 0 2px #39ff14; }
+      to { box-shadow: 0 0 0 2px transparent; }
+    }
+
+    .zepra-filled { animation: zepraFilled 2s forwards; }
+    .zepra-progress { position:fixed;bottom:10px;left:50%;transform:translateX(-50%);background:#0b1220;color:#e2e8f0;padding:6px 10px;border:1px solid #39ff14;border-radius:6px;z-index:2147483647;font-size:14px; }
   `;
   document.head.appendChild(globalStyle);
 

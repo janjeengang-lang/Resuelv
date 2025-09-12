@@ -5,13 +5,13 @@
     <meta charset="UTF-8">
     <title>Zepra</title>
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="theme.css">
     <script src="theme.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
             margin: 0;
             padding: 0;
-            background: #000;
             overflow: hidden;
         }
 
@@ -68,6 +68,22 @@
         #sessionTimer { color: #ffd600; font-weight: 600; }
         .btn.logout { background: #dc2626; border-color: #dc2626; color: #fff; padding: 4px 8px; font-size: 12px; }
 
+        .agent-status {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin: 6px 0;
+            padding: 4px 8px;
+            border: 2px solid var(--accent);
+            background: rgba(57,255,20,0.1);
+            border-radius: 8px;
+            box-shadow: 0 0 10px var(--accent);
+            color: var(--accent2);
+        }
+
+        .agent-status.hidden { display: none; }
+
         .nav-btn {
             background: linear-gradient(120deg, #000 60%, #39ff1480 100%);
             border: none;
@@ -115,12 +131,12 @@
             background: linear-gradient(120deg, #000 60%, #39ff1480 100%);
             border: none;
             border-radius: 0;
-            width: 80px;
-            height: 80px;
-            min-width: 80px;
-            min-height: 80px;
-            max-width: 100px;
-            max-height: 100px;
+            width: 60px;
+            height: 60px;
+            min-width: 60px;
+            min-height: 60px;
+            max-width: 80px;
+            max-height: 80px;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -192,7 +208,7 @@
         }
 
         .icon-btn-icon {
-            font-size: 2.5em !important;
+            font-size: 2em !important;
             margin-bottom: 0;
             display: flex;
             align-items: center;
@@ -202,7 +218,7 @@
         }
 
         .icon-btn-label {
-            font-size: 1.13em;
+            font-size: 0.9em;
             color: #ffd600;
             font-weight: 700;
             letter-spacing: 0.2px;
@@ -358,8 +374,8 @@
     </style>
 </head>
 
-<body>
-    <div id="app" class="popup-card">
+<body class="grid-bg">
+    <div id="app" class="popup-card fade-in">
         <div class="header-video"><video autoplay loop muted src="src/media/key.webm"></video></div>
         <h1 class="title zepra-gradient">Zepra</h1>
 
@@ -367,6 +383,12 @@
         <div id="userBar" class="user-bar">
             <div class="user-left"><span id="userEmail"></span><button id="logoutBtn" class="btn logout">Logout</button></div>
             <div id="sessionTimer">00:00:00</div>
+        </div>
+
+        <!-- AI Co-Pilot Status -->
+        <div id="agentStatus" class="agent-status hidden">
+            AI Co-Pilot Active
+            <button id="stopAgent" class="btn logout">Stop</button>
         </div>
 
         <!-- Main Action Buttons with Navigation -->
