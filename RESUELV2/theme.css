@@ -1,0 +1,313 @@
+:root {
+  --bg: #000000;
+  --fg: #ffffff;
+  --card: #1a1a1a;
+  --accent: #00ff00;
+  --accent2: #ffff00;
+  --border: #333333;
+  --font-base: 'Inter', sans-serif;
+  --font-size: 16px;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --radius: 0.625rem;
+  --neon-green: #00ff00;
+  --neon-yellow: #ffff00;
+  --neon-cyan: #00ffff;
+  --neon-pink: #ff00ff;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-base);
+  font-size: var(--font-size);
+}
+
+/* Neon glow effects */
+.neon-glow {
+  box-shadow:
+    0 0 5px var(--neon-green),
+    0 0 10px var(--neon-green),
+    0 0 15px var(--neon-green),
+    0 0 20px var(--neon-green);
+  transition: all 0.3s ease-in-out;
+}
+.neon-glow:hover {
+  box-shadow:
+    0 0 8px var(--neon-green),
+    0 0 16px var(--neon-green),
+    0 0 24px var(--neon-green),
+    0 0 32px var(--neon-green);
+  transform: scale(1.02);
+}
+.neon-text-pulsating {
+  text-shadow:
+    0 0 5px var(--neon-green),
+    0 0 10px var(--neon-green),
+    0 0 15px var(--neon-green),
+    0 0 20px var(--neon-green);
+  animation: neon-text-pulse 2s ease-in-out infinite alternate;
+}
+@keyframes neon-text-pulse {
+  from {
+    text-shadow:
+      0 0 5px var(--neon-green),
+      0 0 10px var(--neon-green),
+      0 0 15px var(--neon-green);
+  }
+  to {
+    text-shadow:
+      0 0 10px var(--neon-green),
+      0 0 20px var(--neon-green),
+      0 0 30px var(--neon-green),
+      0 0 40px var(--neon-green);
+  }
+}
+
+/* Cyber grid background */
+.cyber-grid {
+  background-image:
+    linear-gradient(rgba(0, 255, 0, 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 255, 0, 0.1) 1px, transparent 1px);
+  background-size: 20px 20px, 20px 20px;
+  animation: grid-pulse 8s ease-in-out infinite;
+}
+@keyframes grid-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.6; }
+}
+
+/* Glass morphism */
+.glass-morphism {
+  background: rgba(26, 26, 26, 0.8);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(0, 255, 0, 0.2);
+}
+
+/* Cyber button */
+.cyber-button {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease-in-out;
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  border-radius: var(--radius);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+}
+.cyber-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  transition: all 0.5s ease-in-out;
+}
+.cyber-button:hover::before { left: 100%; }
+.cyber-button:active { transform: scale(0.98); }
+
+/* Typing animation */
+.typing-animation {
+  overflow: hidden;
+  border-right: 2px solid var(--neon-green);
+  white-space: nowrap;
+  animation: typing 3s steps(30) 1s forwards, blink 1s infinite;
+}
+@keyframes typing { from { width: 0; } to { width: 100%; } }
+@keyframes blink { 0%,50% { border-color: var(--neon-green); } 51%,100% { border-color: transparent; } }
+
+/* Basic form controls */
+input {
+  width: 100%;
+  margin: 8px 0;
+  padding: 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--fg);
+}
+label {
+  display: block;
+  margin-top: 10px;
+  margin-bottom: 4px;
+  font-weight: var(--font-weight-medium);
+}
+
+.login-container {
+  max-width: 320px;
+  margin: 40px auto;
+  padding: 40px 30px;
+  border-radius: var(--radius);
+}
+
+/* Generic panel container used across pages */
+.panel {
+  background: var(--card);
+  border-radius: 12px;
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 20px rgba(0, 255, 0, 0.3), 0 0 20px rgba(255, 255, 0, 0.3);
+  padding: 22px 18px 16px 18px;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+/* Option page sections */
+.group {
+  background: linear-gradient(120deg, #120f12 80%, #0a0f17 100%);
+  border-radius: 14px;
+  box-shadow: 0 2px 12px #0004;
+  padding: 16px;
+  margin: 20px 0;
+  border: 1.5px solid #292d33;
+}
+
+.subtitle {
+  font-size: 1.2em;
+  color: var(--accent2);
+  font-weight: bold;
+  margin-bottom: 16px;
+  text-shadow: 0 1px 2px #000;
+}
+
+label.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 12px 0;
+  gap: 12px;
+}
+
+label.row > span {
+  font-size: 1em;
+  color: #e0e0e0;
+  font-weight: 500;
+  min-width: 140px;
+}
+
+label.row > input,
+label.row > select {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid #334155;
+  background: #0b1220;
+  color: var(--fg);
+  font-size: 0.95em;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+label.row > input:focus,
+label.row > select:focus {
+  outline: none;
+  border-color: var(--accent2);
+  box-shadow: 0 0 0 2px rgba(255, 214, 0, 0.2);
+}
+
+.row.end {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid #292d33;
+}
+
+.btn {
+  background: #1f2937;
+  color: var(--fg);
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 10px 20px;
+  cursor: pointer;
+  font-size: 0.95em;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.btn:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0b1215;
+  font-weight: 600;
+}
+
+.btn.warn {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #fff;
+  font-weight: 600;
+}
+
+.btn.small {
+  padding: 4px 10px;
+  font-size: 0.8em;
+}
+
+.status {
+  margin: 16px 0;
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 0.9em;
+  text-align: center;
+  min-height: 20px;
+  background: rgba(30, 32, 36, 0.5);
+  color: #94a3b8;
+  border: 1px solid #292d33;
+}
+
+.status.error {
+  background: rgba(220, 38, 38, 0.1);
+  color: #fda4af;
+  border-color: #dc2626;
+}
+
+.status:not(:empty) {
+  background: rgba(34, 197, 94, 0.1);
+  color: #86efac;
+  border-color: #22c55e;
+}
+
+#promptTable {
+  width: 100%;
+  margin-top: 10px;
+  border-collapse: collapse;
+}
+
+#promptTable th,
+#promptTable td {
+  border: 1px solid #334155;
+  padding: 8px;
+  text-align: left;
+}
+
+#promptTable th {
+  background: #1f2937;
+  color: var(--accent2);
+}
+
+#promptTable tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+textarea#promptText {
+  background: #0b1220;
+  border: 1px solid #334155;
+  color: var(--fg);
+  border-radius: 6px;
+  padding: 8px 12px;
+  resize: vertical;
+}
+
+#sitesList {
+  list-style: none;
+  padding-left: 0;
+  margin-top: 10px;
+}
