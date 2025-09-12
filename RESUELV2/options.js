@@ -253,7 +253,7 @@ els.clear?.addEventListener('click', async () => {
 
 els.test?.addEventListener('click', async () => {
   try {
-    notify('Testing…');
+    notify('Testing...');
     // Simple test via Cerebras backend
     const res = await chrome.runtime.sendMessage({
       type: 'CEREBRAS_GENERATE',
@@ -269,7 +269,7 @@ els.test?.addEventListener('click', async () => {
 
 els.testIpdata?.addEventListener('click', async () => {
   try {
-    notify('Testing ipdata…');
+    notify('Testing ipdata...');
     const key = els.ipdataKey.value.trim();
     if (!key) { notify('Enter API key', true); return; }
     const res = await chrome.runtime.sendMessage({ type: 'TEST_IPDATA', key });
