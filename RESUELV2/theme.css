@@ -1,0 +1,43 @@
+:root {
+  --bg: #000;
+  --fg: #e2e8f0;
+  --accent: #39ff14;
+  --accent2: #ffe600;
+  --card: #0b0b0b;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: 'Segoe UI', Tahoma, sans-serif;
+}
+
+/* animated neon grid background */
+body.grid-bg {
+  background-color: #000;
+  background-image:
+    linear-gradient(rgba(57,255,20,0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(57,255,20,0.1) 1px, transparent 1px);
+  background-size: 40px 40px;
+  animation: gridMove 20s linear infinite;
+}
+@keyframes gridMove {
+  from { background-position: 0 0,0 0; }
+  to { background-position: 0 40px,40px 0; }
+}
+
+/* glow helpers */
+.glow {
+  text-shadow: 0 0 8px var(--accent), 0 0 16px var(--accent2);
+}
+
+/* simple fade/slide animation */
+.fade-in {
+  opacity: 0;
+  transform: translateY(10px);
+  animation: fadeIn 0.6s ease forwards;
+}
+@keyframes fadeIn {
+  to { opacity:1; transform:translateY(0); }
+}

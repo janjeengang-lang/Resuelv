@@ -15,6 +15,8 @@
     navCustom: document.getElementById('navCustom'),
     navIdent: document.getElementById('navIdent'),
     navOptions: document.getElementById('navOptions'),
+    agentStatus: document.getElementById('agentStatus'),
+    stopAgent: document.getElementById('stopAgent'),
   };
 
 (async function initSession(){
@@ -86,7 +88,7 @@ let lastQuestion = '';
 // Navigation state
 let currentPage = 0;
 const buttonsPerPage = 3;
-const allButtons = ['btnOpen', 'btnMCQ', 'btnScale', 'btnYesNo', 'btnAuto', 'btnOCR', 'btnTranslate'];
+const allButtons = ['btnOpen', 'btnMCQ', 'btnScale', 'btnYesNo', 'btnAuto', 'btnAgent', 'btnOCR', 'btnTranslate'];
 
 function updateButtonVisibility() {
   const startIndex = currentPage * buttonsPerPage;
@@ -124,6 +126,49 @@ for (const id of Object.keys(btnMap)) {
 }
 
 updateButtonVisibility();
+
+document.getElementById('btnAgent')?.addEventListener('click', async () => {
+  const tab = await getActiveTab();
+  await ensureContentScript(tab.id);
+  const { surveysAgentActive } = await chrome.storage.local.get('surveysAgentActive');
+  if (surveysAgentActive) {
+    await chrome.tabs.sendMessage(tab.id, { type: 'SURVEYS_AGENT_STOP' });
+    await chrome.storage.local.set({ surveysAgentActive: false });
+    updateAgentUI(false);
+  } else {
+    await chrome.tabs.sendMessage(tab.id, { type: 'SURVEYS_AGENT_START' });
+    await chrome.storage.local.set({ surveysAgentActive: true });
+    updateAgentUI(true);
+  }
+});
+
+els.stopAgent?.addEventListener('click', async () => {
+  const tab = await getActiveTab();
+  await ensureContentScript(tab.id);
+  await chrome.tabs.sendMessage(tab.id, { type: 'SURVEYS_AGENT_STOP' });
+  await chrome.storage.local.set({ surveysAgentActive: false });
+  updateAgentUI(false);
+});
+
+async function initAgentState() {
+  const { surveysAgentActive } = await chrome.storage.local.get('surveysAgentActive');
+  updateAgentUI(!!surveysAgentActive);
+}
+
+function updateAgentUI(active) {
+  if (active) {
+    els.agentStatus.classList.remove('hidden');
+  } else {
+    els.agentStatus.classList.add('hidden');
+  }
+}
+
+initAgentState();
+chrome.storage.onChanged.addListener(chg => {
+  if (chg.surveysAgentActive) {
+    updateAgentUI(chg.surveysAgentActive.newValue);
+  }
+});
 
   els.navOptions?.addEventListener('click', () => chrome.runtime.openOptionsPage());
   els.navCustom?.addEventListener('click', async () => {
