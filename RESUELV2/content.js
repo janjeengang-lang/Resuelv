@@ -4,7 +4,6 @@
 // - Fallback image crop
 // - Type text into focused field (no humanize; speed only)
 // - Floating bubble with rainbow modal
-// (Video dubbing feature removed)
 
 function init() {
   if (window.zepraInit) return;
@@ -1854,6 +1853,207 @@ function init() {
     await chrome.storage.local.set({ contextQA: list });
   }
 
+  /* AI Co-Pilot ------------------------------------------------------- */
+  let copilotActive = false;
+
+  function isVisible(el) {
+    return !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+  }
+
+  function getLabelText(el) {
+    if (el.labels && el.labels[0]) return el.labels[0].textContent.trim();
+    if (el.id) {
+      const lbl = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+      if (lbl) return lbl.textContent.trim();
+    }
+    const parent = el.closest('label');
+    return parent ? parent.textContent.trim() : '';
+  }
+
+  function getGroupQuestionText(el) {
+    const fs = el.closest('fieldset');
+    if (fs) {
+      const legend = fs.querySelector('legend');
+      if (legend) return legend.textContent.trim();
+    }
+    let label = getLabelText(el);
+    if (label) return label;
+    let parent = el.parentElement;
+    while (parent) {
+      const prev = parent.previousElementSibling;
+      if (prev && prev.textContent.trim()) return prev.textContent.trim();
+      parent = parent.parentElement;
+    }
+    return el.name || 'Question';
+  }
+
+  function collectQuestions() {
+    const questions = [];
+    const radioProcessed = new Set();
+    document.querySelectorAll('input[type=radio]').forEach(r => {
+      if (!isVisible(r) || radioProcessed.has(r.name)) return;
+      const group = Array.from(document.querySelectorAll(`input[type=radio][name="${CSS.escape(r.name)}"]`));
+      const options = group.map(o => ({ text: getLabelText(o) || o.value, el: o }));
+      questions.push({ type: 'radio', question: getGroupQuestionText(r), options });
+      radioProcessed.add(r.name);
+    });
+    const checkProcessed = new Set();
+    document.querySelectorAll('input[type=checkbox]').forEach(c => {
+      if (!isVisible(c) || checkProcessed.has(c.name)) return;
+      const group = c.name ? Array.from(document.querySelectorAll(`input[type=checkbox][name="${CSS.escape(c.name)}"]`)) : [c];
+      const options = group.map(o => ({ text: getLabelText(o) || o.value, el: o }));
+      questions.push({ type: 'checkbox', question: getGroupQuestionText(c), options });
+      if (c.name) checkProcessed.add(c.name);
+    });
+    document.querySelectorAll('select').forEach(s => {
+      if (!isVisible(s)) return;
+      const options = Array.from(s.options).map(o => ({ text: o.textContent.trim(), el: o }));
+      questions.push({ type: 'select', question: getLabelText(s) || 'Select', el: s, options });
+    });
+    document.querySelectorAll('input[type=range]').forEach(r => {
+      if (!isVisible(r)) return;
+      questions.push({ type: 'range', question: getLabelText(r) || 'Range', el: r, min: r.min || '0', max: r.max || '100' });
+    });
+    document.querySelectorAll('textarea, input[type=text]').forEach(t => {
+      if (!isVisible(t)) return;
+      questions.push({ type: 'text', question: getLabelText(t) || 'Text', el: t });
+    });
+    return questions;
+  }
+
+  function buildCopilotPrompt(questions, identity, ctx) {
+    const ctxLines = (ctx || []).map(c => `Q: ${c.q}\nA: ${c.a}`).join('\n');
+    let qLines = '';
+    questions.forEach((q, i) => {
+      const num = i + 1;
+      const attention = 'First, analyze this question. If it is a direct instruction or an attention check (e.g., "select the color blue"), follow the instruction exactly. Otherwise, answer based on your persona.';
+      if (q.type === 'radio' || q.type === 'select') {
+        qLines += `Q${num}: ${q.question}\nOptions: [${q.options.map(o => o.text).join(', ')}]\n${attention}\nRespond with a JSON object: {"choice":"Chosen Option Text"}\n\n`;
+      } else if (q.type === 'checkbox') {
+        qLines += `Q${num}: ${q.question}\nOptions: [${q.options.map(o => o.text).join(', ')}]\n${attention}\nRespond with a JSON object: {"choices":["Option1","Option2"]}\n\n`;
+      } else if (q.type === 'range') {
+        qLines += `Q${num}: ${q.question}\n${attention}\nRespond with a JSON object: {"value": ${q.min}-${q.max}}\n\n`;
+      } else {
+        qLines += `Q${num}: ${q.question}\n${attention}\nRespond with a JSON object: {"answer":"..."}\n\n`;
+      }
+    });
+    return `Active Identity:\n${JSON.stringify(identity || {})}\nLast 10 Q&A:\n${ctxLines || 'None'}\nProvide answers for the following questions. Return a single JSON object whose keys are "1", "2", ... corresponding to each question.\n${qLines}CRITICAL: Your response MUST be ONLY the JSON object.`;
+  }
+
+  async function runConsistencyCheck() {
+    return true; // placeholder for real checker
+  }
+
+  async function applyCopilotDecisions(decisions, questions) {
+    const fallbacks = [];
+    for (let i = 0; i < questions.length; i++) {
+      const key = String(i + 1);
+      const dec = decisions[key];
+      if (!dec) continue;
+      const q = questions[i];
+      if (!(await runConsistencyCheck(q.question, dec))) continue;
+      let applied = false;
+      if (q.type === 'text') {
+        try {
+          q.el.focus();
+          await typeIntoFocusedElement(dec.answer || '', { speed: 'normal' });
+          await saveContext({ q: q.question, a: dec.answer || '' });
+          applied = true;
+        } catch {}
+      } else if (q.type === 'radio') {
+        const opt = q.options.find(o => o.text === dec.choice);
+        if (opt) { opt.el.click(); await saveContext({ q: q.question, a: dec.choice }); applied = true; }
+      } else if (q.type === 'checkbox') {
+        const choices = dec.choices || [];
+        const matched = q.options.filter(o => choices.includes(o.text));
+        if (matched.length) { matched.forEach(o => o.el.click()); await saveContext({ q: q.question, a: choices.join(', ') }); applied = true; }
+      } else if (q.type === 'select') {
+        const opt = q.options.find(o => o.text === dec.choice);
+        if (opt) { q.el.value = opt.el.value; q.el.dispatchEvent(new Event('change', { bubbles: true })); await saveContext({ q: q.question, a: dec.choice }); applied = true; }
+      } else if (q.type === 'range') {
+        if (dec.value !== undefined) { q.el.value = dec.value; q.el.dispatchEvent(new Event('input', { bubbles: true })); await saveContext({ q: q.question, a: String(dec.value) }); applied = true; }
+      }
+      if (!applied) {
+        let ans = '';
+        if (q.type === 'text') ans = dec.answer || '';
+        else if (q.type === 'radio' || q.type === 'select') ans = dec.choice || '';
+        else if (q.type === 'checkbox') ans = (dec.choices || []).join(', ');
+        else if (q.type === 'range') ans = String(dec.value);
+        fallbacks.push({ question: q.question, answer: ans });
+      }
+      await new Promise(r => setTimeout(r, 300));
+    }
+    return fallbacks;
+  }
+
+  function findNextButton() {
+    const candidates = Array.from(document.querySelectorAll('button, input[type=button], input[type=submit], a'));
+    return candidates.find(b => {
+      const t = (b.innerText || b.value || '').trim().toLowerCase();
+      return ['next', 'continue', 'submit'].includes(t);
+    });
+  }
+
+  let copilotHelpEl = null;
+  async function writeFromHelp(ans){
+    if(!STATE.lastFocused){ alert('Click a field on the page first'); return; }
+    await showCountdown(3);
+    await typeIntoFocusedElement(ans, { speed:'normal' });
+  }
+  function showCopilotHelpModal(items){
+    if(copilotHelpEl) copilotHelpEl.remove();
+    copilotHelpEl = document.createElement('div');
+    copilotHelpEl.id = 'zepra-copilot-help';
+    copilotHelpEl.innerHTML = `<p>This page is protected or complex. I've prepared the answers for you to fill in manually.</p>` +
+      items.map((it,i)=>`<div class="copilot-item"><strong>Q${i+1}:</strong> ${it.question}<br><em>${it.answer}</em> <button data-ans="${i}">Write Here</button></div>`).join('');
+    const style = document.createElement('style');
+    style.textContent = `#zepra-copilot-help{position:fixed;top:10px;right:10px;background:#0b1220;color:#e2e8f0;padding:12px;border:1px solid #39ff14;border-radius:8px;font-size:14px;z-index:2147483647;max-width:300px;}`+
+      `#zepra-copilot-help button{margin-left:8px;background:#22c55e;border:none;color:#000;padding:2px 4px;border-radius:4px;cursor:pointer;}`+
+      `#zepra-copilot-help .copilot-item{margin-top:6px;}`+
+      `#zepra-copilot-help p{margin:0 0 6px 0;font-size:13px;}`;
+    copilotHelpEl.appendChild(style);
+    document.body.appendChild(copilotHelpEl);
+    copilotHelpEl.querySelectorAll('button[data-ans]').forEach(btn=>{
+      btn.addEventListener('click',()=>{
+        const ans = items[Number(btn.dataset.ans)].answer;
+        writeFromHelp(ans);
+      });
+    });
+  }
+
+  async function startCopilot() {
+    if (copilotActive) return;
+    copilotActive = true;
+    await chrome.storage.local.set({ copilotActive: true });
+    try {
+      while (copilotActive) {
+        const questions = collectQuestions();
+        if (!questions.length) { showCopilotHelpModal([]); break; }
+        const ctx = await getContext();
+        const prompt = buildCopilotPrompt(questions, activeIdentity, ctx);
+        let resp;
+        try { resp = await chrome.runtime.sendMessage({ type: 'CEREBRAS_GENERATE', prompt }); }
+        catch (e) { console.error('AI Co-Pilot generation failed', e); break; }
+        let decisions;
+        try { decisions = JSON.parse(resp.result); }
+        catch (e) { console.error('Invalid JSON from AI', e); break; }
+        const fallbacks = await applyCopilotDecisions(decisions, questions);
+        if (fallbacks.length) { showCopilotHelpModal(fallbacks); break; }
+        const next = findNextButton();
+        if (next) { next.click(); await new Promise(r => setTimeout(r, 1500)); }
+        else break;
+      }
+    } finally {
+      copilotActive = false;
+      await chrome.storage.local.set({ copilotActive: false });
+    }
+  }
+
+  async function stopCopilot() {
+    copilotActive = false;
+    await chrome.storage.local.set({ copilotActive: false });
+  }
+
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     (async () => {
       try {
@@ -1893,6 +2093,16 @@ function init() {
           }
           case 'SCROLL_TO': {
             window.scrollTo(0, msg.y || 0);
+            sendResponse({ ok: true });
+            break;
+          }
+          case 'COPILOT_START': {
+            startCopilot();
+            sendResponse({ ok: true });
+            break;
+          }
+          case 'COPILOT_STOP': {
+            await stopCopilot();
             sendResponse({ ok: true });
             break;
           }
