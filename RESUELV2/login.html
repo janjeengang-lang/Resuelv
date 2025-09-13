@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Login - Zepra</title>
+  <title>Zepra Login</title>
   <link rel="stylesheet" href="styles.css" />
   <script src="theme.js"></script>
   <style>
@@ -81,8 +81,10 @@
       color: #0b1215;
       font-weight: 600;
       cursor: pointer;
+      transition: transform 0.2s;
     }
-    button:hover { filter: brightness(1.1); }
+    button:hover { filter: brightness(1.1); transform: translateY(-2px) scale(1.02); }
+    button:active { transform: scale(0.98); }
     #loginError {
       margin-top: 12px;
       text-align: center;
@@ -95,11 +97,12 @@
   <div class="box">
     <div id="headerWrap" class="header-video"><video id="headerVideo" autoplay loop muted src="src/media/key.webm"></video></div>
     <h1 class="zepra-gradient">Zepra</h1>
-    <input type="email" id="email" placeholder="Email" />
-    <input type="password" id="password" placeholder="Password" />
-    <button id="loginBtn">Login</button>
+    <input type="email" id="email" placeholder="Enter your email" />
+    <input type="password" id="password" placeholder="Enter your password" />
+    <button id="loginBtn">Access Zepra</button>
     <div id="loginError"></div>
   </div>
   <script src="login.js"></script>
 </body>
 </html>
+
