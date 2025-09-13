@@ -28,6 +28,10 @@ const els = {
   webWidth: document.getElementById('webWidth'),
   webHeight: document.getElementById('webHeight'),
   primaryColor: document.getElementById('primaryColor'),
+  navButtons: document.querySelectorAll('.side-nav button[data-target]'),
+  sections: document.querySelectorAll('main > section'),
+  saveBar: document.getElementById('saveBar'),
+  resetChanges: document.getElementById('resetChanges'),
 };
 
 const DEFAULT_SITES = [
@@ -43,6 +47,13 @@ function notify(msg, isErr = false) {
   if (!els.status) return;
   els.status.textContent = msg;
   els.status.className = 'status' + (isErr ? ' error' : '');
+}
+
+let dirty = false;
+function markDirty() {
+  if (dirty) return;
+  dirty = true;
+  els.saveBar?.classList.add('show');
 }
 
 async function load() {
@@ -76,6 +87,8 @@ async function load() {
     await loadPrompts();
     await loadSites();
     console.log('Settings loaded successfully');
+    dirty = false;
+    els.saveBar?.classList.remove('show');
   } catch (e) {
     console.error('Error loading settings:', e);
     notify('Error loading settings: ' + e.message, true);
@@ -239,6 +252,8 @@ els.save?.addEventListener('click', async () => {
     document.documentElement.style.setProperty('--accent', els.primaryColor.value);
     notify('Saved');
     console.log('Settings saved successfully');
+    dirty = false;
+    els.saveBar?.classList.remove('show');
   } catch (e) {
     console.error('Error saving settings:', e);
     notify('Error saving: ' + e.message, true);
@@ -280,6 +295,26 @@ els.testIpdata?.addEventListener('click', async () => {
 
 els.primaryColor?.addEventListener('input', e => {
   document.documentElement.style.setProperty('--accent', e.target.value);
+});
+
+// navigation
+els.navButtons.forEach(btn =>
+  btn.addEventListener('click', () => {
+    const target = btn.getAttribute('data-target');
+    els.navButtons.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    els.sections.forEach(sec => sec.classList.toggle('active', sec.id === target));
+  })
+);
+
+// track changes for save bar
+document.querySelectorAll('[data-track] input,[data-track] select,[data-track] textarea').forEach(el => {
+  el.addEventListener('input', markDirty);
+  el.addEventListener('change', markDirty);
+});
+
+els.resetChanges?.addEventListener('click', () => {
+  load();
 });
 
 load();
