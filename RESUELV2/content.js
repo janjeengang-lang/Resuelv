@@ -382,199 +382,232 @@ function init() {
   }
 
   function showBubbleMenu() {
-    if (document.getElementById('zepra-bubble-menu')) return;
-    
-    const menu = document.createElement('div');
-    menu.id = 'zepra-bubble-menu';
+    if (document.getElementById('zepra-sidebar')) return;
+
+    const menu = document.createElement('aside');
+    menu.id = 'zepra-sidebar';
     menu.innerHTML = `
-      <div class="bubble-menu-content">
-        <div class="menu-header">
-          <h3 class="zepra-gradient">Zepra Menu</h3>
-          <button class="close-btn">&times;</button>
+      <div class="zepra-particles"></div>
+      <header class="sidebar-header">
+        <svg class="zap-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        <div class="title-group">
+          <h2>Zepra Menu</h2>
+          <p>Chrome Extension Suite</p>
         </div>
-        <div class="menu-items">
-          <div class="menu-item" data-action="ocr">
-            <span class="menu-icon">📷</span>
-            <span class="menu-text">OCR Capture</span>
-          </div>
-          <div class="menu-item" data-action="ocr-full">
-            <span class="menu-icon">🖼️</span>
-            <span class="menu-text">OCR Full Page</span>
-          </div>
-          <div class="menu-item" data-action="write-last">
-            <span class="menu-icon">✍️</span>
-            <span class="menu-text">Write Last Answer</span>
-          </div>
-          <div class="menu-item" data-action="clear-context">
-            <span class="menu-icon">🧹</span>
-            <span class="menu-text">Clear AI Context</span>
-          </div>
-          <div class="menu-item" data-action="ip-info">
-            <span class="menu-icon">🌐</span>
-            <span class="menu-text">IP Information</span>
-          </div>
-          <div class="menu-item" data-action="ip-qual">
-            <span class="menu-icon">📊</span>
-            <span class="menu-text">IP Qualification</span>
-          </div>
-          <div class="menu-item" data-action="fake-info">
-            <span class="menu-icon">👤</span>
-            <span class="menu-text">Generate Fake Info</span>
-          </div>
-          <div class="menu-item" data-action="temp-mail">
-            <span class="menu-icon">📧</span>
-            <span class="menu-text">Temp Mail</span>
-          </div>
-          <div class="menu-item" data-action="custom-web">
-            <span class="menu-icon">🌐</span>
-            <span class="menu-text">Custom Web</span>
-          </div>
-          <div class="menu-item" data-action="ai-humanizer">
-            <span class="menu-icon">🧠</span>
-            <span class="menu-text">AI Humanizer</span>
-          </div>
-          <div class="menu-item" data-action="real-address">
-            <span class="menu-icon">🏠</span>
-            <span class="menu-text">Generate Real Address</span>
-          </div>
-          <div class="menu-item" data-action="company-info">
-            <span class="menu-icon">🏢</span>
-            <span class="menu-text">Generate Company Info</span>
-          </div>
-          <div class="menu-item" data-action="identity-panel">
-            <span class="menu-icon">📋</span>
-            <span class="menu-text">Show Identity Data</span>
-          </div>
-          <div class="menu-item" data-action="zebra-vps">
-            <span class="menu-icon">💻</span>
-            <span class="menu-text">Zebra VPS</span>
-          </div>
-        </div>
-      </div>
-    `;
-    
-    menu.style.cssText = `
-      position: fixed;
-      top: 90px;
-      right: 20px;
-      width: 250px;
-      background: #000;
-      border-radius: 15px;
-      box-shadow: 0 0 20px rgba(57,255,20,0.3), 0 0 20px rgba(255,230,0,0.3);
-      z-index: 2147483648;
-      animation: slideIn 0.3s ease-out;
-      border: 2px solid #39ff14;
+        <button class="close-btn" aria-label="Close">&times;</button>
+      </header>
+      <nav class="sidebar-nav">
+        <ul>
+          <li><a href="#" data-action="ocr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="12" cy="12" r="3"/></svg><span>OCR Capture</span></a></li>
+          <li><a href="#" data-action="ocr-full"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg><span>OCR Full Page</span></a></li>
+          <li><a href="#" data-action="write-last"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span>Write Last Answer</span></a></li>
+          <li><a href="#" data-action="clear-context"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg><span>Clear AI Context</span></a></li>
+          <li><a href="#" data-action="ip-info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg><span>IP Information</span></a></li>
+          <li><a href="#" data-action="ip-qual"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg><span>IP Qualification</span></a></li>
+          <li><a href="#" data-action="fake-info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="4"/><path d="M5.5 21a7.5 7.5 0 0 1 13 0"/></svg><span>Generate Fake Info</span></a></li>
+          <li><a href="#" data-action="temp-mail"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="22,6 12,13 2,6"/></svg><span>Temp Mail</span></a></li>
+          <li><a href="#" data-action="custom-web"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg><span>Custom Web</span></a></li>
+          <li><a href="#" data-action="ai-humanizer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-7 7v4a7 7 0 0 0 7 7 7 7 0 0 0 7-7V9a7 7 0 0 0-7-7z"/><path d="M9 9h6"/><path d="M9 13h6"/></svg><span>AI Humanizer</span></a></li>
+          <li><a href="#" data-action="real-address"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7"/><path d="M9 22V12h6v10"/><path d="M9 22H5a2 2 0 0 1-2-2v-7"/><path d="M21 13v7a2 2 0 0 1-2 2h-4"/></svg><span>Generate Real Address</span></a></li>
+          <li><a href="#" data-action="company-info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M16 3v18"/><path d="M8 3v18"/><path d="M3 8h18"/><path d="M3 16h18"/></svg><span>Generate Company Info</span></a></li>
+          <li><a href="#" data-action="identity-panel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M15 8h2"/><path d="M15 12h2"/><path d="M7 16h10"/></svg><span>Show Identity Data</span></a></li>
+          <li><a href="#" data-action="zebra-vps"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="8" rx="2"/><rect x="2" y="12" width="20" height="8" rx="2"/><path d="M6 8h.01"/><path d="M6 16h.01"/></svg><span>Zebra VPS</span></a></li>
+        </ul>
+      </nav>
+      <footer class="sidebar-footer">
+        <p>Powered by Advanced AI · Secure & Encrypted</p>
+        <div class="footer-dots"><span></span><span></span><span></span></div>
+      </footer>
     `;
 
     const menuStyle = document.createElement('style');
     menuStyle.textContent = `
-      @keyframes slideIn {
-        from { opacity: 0; transform: translateY(-20px) scale(0.9); }
-        to { opacity: 1; transform: translateY(0) scale(1); }
-      }
-      
-      .bubble-menu-content {
-        padding: 15px;
-        color: #e2e8f0;
-      }
-      
-      .menu-header {
+      #zepra-sidebar {
+        position: fixed;
+        top: 0;
+        right: 0;
+        height: 100vh;
+        width: 100%;
+        max-width: 360px;
+        background-color: rgba(0,0,0,0.8);
+        backdrop-filter: blur(12px);
+        border-left: 1px solid rgba(74,222,128,0.2);
         display: flex;
-        justify-content: space-between;
+        flex-direction: column;
+        transform: translateX(100%);
+        transition: transform 0.4s ease-in-out;
+        z-index: 2147483648;
+        overflow-y: auto;
+      }
+
+      #zepra-sidebar.open { transform: translateX(0); }
+
+      #zepra-sidebar .zepra-particles {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        z-index: -1;
+      }
+
+      #zepra-sidebar .zepra-particles span {
+        position: absolute;
+        display: block;
+        border-radius: 50%;
+        background: rgba(74,222,128,0.4);
+        animation: float 6s linear infinite;
+      }
+
+      @keyframes float {
+        0% { transform: translateY(0); }
+        50% { transform: translateY(-10px); }
+        100% { transform: translateY(0); }
+      }
+
+      .sidebar-header {
+        display: flex;
         align-items: center;
-        margin-bottom: 15px;
-        border-bottom: 1px solid #292d33;
-        padding-bottom: 10px;
+        justify-content: space-between;
+        padding: 16px;
+        border-bottom: 1px solid rgba(74,222,128,0.2);
       }
-      
-      .menu-header h3 {
+
+      .sidebar-header .title-group { flex: 1; margin-left: 8px; }
+      .sidebar-header h2 {
         margin: 0;
-        font-size: 16px;
-        font-weight: bold;
-        color: #39ff14;
+        font-size: 1.2rem;
+        color: #4ade80;
+        text-shadow: 0 0 8px #4ade80;
       }
-      
+      .sidebar-header p {
+        margin: 2px 0 0;
+        font-size: 0.75rem;
+        color: #94a3b8;
+      }
+      .zap-icon {
+        width: 24px;
+        height: 24px;
+        flex-shrink: 0;
+        color: #4ade80;
+        filter: drop-shadow(0 0 5px #4ade80);
+        animation: pulse 2s infinite;
+      }
+
+      @keyframes pulse {
+        0%,100% { opacity: 1; }
+        50% { opacity: 0.6; }
+      }
+
       .close-btn {
         background: none;
         border: none;
-        color: #e2e8f0;
+        color: #9ca3af;
         font-size: 20px;
         cursor: pointer;
-        padding: 0;
-        width: 25px;
-        height: 25px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: background 0.2s;
+        transition: color 0.2s;
       }
-      
-      .close-btn:hover {
-        background: rgba(255,255,255,0.2);
-      }
-      
-      .menu-items {
+      .close-btn:hover { color: #fff; }
+
+      .sidebar-nav ul {
+        list-style: none;
+        padding: 8px;
+        margin: 0;
         display: flex;
         flex-direction: column;
         gap: 4px;
       }
 
-      .menu-item {
+      .sidebar-nav a {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px;
+        border-radius: 8px;
+        color: #4ade80;
+        text-decoration: none;
+        transition: all 0.2s ease;
+      }
+
+      .sidebar-nav a svg { width: 20px; height: 20px; flex-shrink: 0; }
+
+      .sidebar-nav a::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 3px;
+        background: #4ade80;
+        opacity: 0;
+        box-shadow: 0 0 6px #4ade80;
+        transition: opacity 0.2s;
+      }
+
+      .sidebar-nav a:hover {
+        background-color: rgba(74,222,128,0.1);
+        transform: translateX(5px);
+      }
+      .sidebar-nav a:hover::before { opacity: 1; }
+
+      .sidebar-footer {
+        margin-top: auto;
+        padding: 12px;
+        border-top: 1px solid rgba(74,222,128,0.2);
         display: flex;
         align-items: center;
         gap: 6px;
-        padding: 4px;
-        border-radius: 8px;
-        cursor: pointer;
-        transition: all 0.2s;
-        background: linear-gradient(120deg, #000 60%, #39ff1480 100%);
+        color: #9ca3af;
+        font-size: 0.75rem;
       }
-      
-      .menu-item:hover {
-        background: linear-gradient(120deg, #39ff1499 60%, #ffe600 100%);
-        transform: translateX(5px);
-      }
-      
-      .menu-icon {
-        font-size: 14px;
-        width: 18px;
-        text-align: center;
-      }
-
-      .menu-text {
-        font-size: 13px;
-        font-weight: 500;
-        color: #ffd600;
+      .footer-dots { display: flex; gap: 4px; margin-left: 4px; }
+      .footer-dots span {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #4ade80;
+        animation: pulse 2s infinite;
       }
     `;
-    
+
     document.head.appendChild(menuStyle);
     document.body.appendChild(menu);
 
-    // Event listeners
-    menu.querySelector('.close-btn').addEventListener('click', () => {
-      menu.remove();
-      menuStyle.remove();
-    });
+    // spawn particles
+    const particleBox = menu.querySelector('.zepra-particles');
+    for (let i = 0; i < 25; i++) {
+      const s = document.createElement('span');
+      const size = Math.random() * 4 + 2;
+      s.style.width = s.style.height = `${size}px`;
+      s.style.left = `${Math.random() * 100}%`;
+      s.style.top = `${Math.random() * 100}%`;
+      s.style.animationDuration = `${Math.random() * 5 + 5}s`;
+      s.style.animationDelay = `${Math.random() * 5}s`;
+      particleBox.appendChild(s);
+    }
+
+    requestAnimationFrame(() => menu.classList.add('open'));
+
+    const closeMenu = () => {
+      menu.classList.remove('open');
+      setTimeout(() => { menu.remove(); menuStyle.remove(); }, 400);
+    };
+
+    menu.querySelector('.close-btn').addEventListener('click', closeMenu);
 
     menu.addEventListener('click', (e) => {
-      const item = e.target.closest('.menu-item');
-      if (!item) return;
-      
-      const action = item.dataset.action;
+      const link = e.target.closest('a[data-action]');
+      if (!link) return;
+      e.preventDefault();
+      const action = link.dataset.action;
       handleBubbleAction(action);
-      menu.remove();
-      menuStyle.remove();
+      closeMenu();
     });
 
-    // Close on outside click
     setTimeout(() => {
-      document.addEventListener('click', function closeMenu(e) {
+      document.addEventListener('click', function outside(e) {
         if (!menu.contains(e.target) && !STATE.bubble.contains(e.target)) {
-          menu.remove();
-          menuStyle.remove();
-          document.removeEventListener('click', closeMenu);
+          closeMenu();
+          document.removeEventListener('click', outside);
         }
       });
     }, 100);
@@ -733,68 +766,183 @@ function init() {
 
     const statusText = qualified ? 'QUALIFIED' : 'NOT QUALIFIED';
     const statusColor = qualified ? '#39ff14' : '#ff4444';
+    const passColor = '#39ff14';
+    const failColor = '#ff4444';
     let failMsg = '';
     if (!riskPass) failMsg = 'Your risk score is too high. You must change your connection.';
     else if (!blacklistPass) failMsg = 'Your IP is on a blacklist. You must change your connection.';
     else if (!anonymityPass) failMsg = 'Proxy/VPN/Tor detected. Please disable it and try again.';
 
-    const passIcon = '<span style="color:#39ff14;">✔️</span>';
-    const failIcon = '<span style="color:#ff4444;">❌</span>';
-    const clip = chrome.runtime.getURL(qualified ? 'src/media/zepra.webm' : 'src/media/carry.webm');
+    const particles = Array.from({ length: 12 })
+      .map((_, i) => `<span class="ipq-particle" style="--i:${i};"></span>`) 
+      .join('');
+
+    const checks = [
+      { pass: riskPass, label: 'Risk Score Assessment', icon: '🛡' },
+      { pass: blacklistPass, label: 'Blacklist Verification', icon: '👁' },
+      { pass: anonymityPass, label: 'Anonymity Detection', icon: '🌐' },
+    ];
+
+    const checklistHTML = checks
+      .map(
+        (c, i) => `
+        <div class="ipq-check" style="--i:${i};">
+          <span class="ipq-check-icon">${c.icon}</span>
+          <span class="ipq-check-label">${c.label}</span>
+          <span class="ipq-check-result" style="color:${c.pass ? passColor : failColor};">${c.pass ? '✔' : '✖'}</span>
+        </div>`
+      )
+      .join('');
 
     const html = `
       <style>
-        .ipq-wrap{display:flex;flex-direction:column;align-items:center;gap:20px;color:#e2e8f0;max-width:320px;}
-        .ipq-circle{position:relative;width:120px;height:120px;border-radius:50%;overflow:hidden;border:4px solid ${statusColor};box-shadow:0 0 15px ${statusColor};}
-        .ipq-circle video{width:100%;height:100%;object-fit:contain;}
-        .ipq-circle .text{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;}
-        .ipq-status{font-size:24px;font-weight:bold;text-shadow:0 0 10px currentColor;}
-        .ipq-score{font-size:32px;font-weight:bold;}
-        .ipq-checklist{list-style:none;padding:0;margin:0;width:100%;}
-        .ipq-checklist li{display:flex;align-items:center;gap:8px;margin:4px 0;}
-        .ipq-message{text-align:center;font-weight:bold;}
-        .ipq-details{width:100%;text-align:left;line-height:1.6;}
-        .ipq-details strong{color:#39ff14;}
+        .styled-modal-header .ipq-title-icon{margin-right:6px;}
+        .ipq-futuristic{--status:${statusColor};display:flex;flex-direction:column;align-items:center;gap:24px;color:#e2e8f0;max-width:360px;animation:ipqModalIn 0.4s cubic-bezier(.3,1,.3,1) both;}
+        @keyframes ipqModalIn{from{opacity:0;transform:translateY(40px) scale(.95);}to{opacity:1;transform:translateY(0) scale(1);}}
+        .ipq-status-circle{position:relative;width:180px;height:180px;}
+        .ipq-status-circle .ring{position:absolute;top:0;left:0;width:100%;height:100%;border:4px solid var(--status);border-radius:50%;box-shadow:0 0 20px var(--status);animation:ipqSpin 8s linear infinite,ipqPulse 2s ease-in-out infinite;}
+        .ipq-status-circle .inner{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;}
+        .ipq-status-text{font-size:24px;font-weight:bold;color:var(--status);text-shadow:0 0 10px var(--status);}
+        .ipq-score{font-size:36px;font-weight:bold;color:var(--status);}
+        @keyframes ipqSpin{from{transform:rotate(0);}to{transform:rotate(360deg);}}
+        @keyframes ipqPulse{0%,100%{box-shadow:0 0 5px var(--status);}50%{box-shadow:0 0 25px var(--status);}}
+        .ipq-particle{position:absolute;top:50%;left:50%;width:6px;height:6px;background:var(--status);border-radius:50%;filter:blur(1px);animation:ipqOrbit 3s linear infinite;animation-delay:calc(var(--i)*-0.25s);}
+        @keyframes ipqOrbit{from{transform:rotate(0deg) translateX(90px) rotate(0deg);}to{transform:rotate(360deg) translateX(90px) rotate(-360deg);}}
+        .ipq-checklist{display:flex;flex-direction:column;gap:12px;width:100%;}
+        .ipq-check{display:flex;align-items:center;justify-content:space-between;padding:12px;border:1px solid rgba(255,255,255,0.1);border-radius:10px;background:rgba(255,255,255,0.05);backdrop-filter:blur(6px);animation:ipqFadeUp 0.4s ease forwards;animation-delay:calc(var(--i)*0.1s);}
+        .ipq-check:hover{box-shadow:0 0 15px rgba(255,255,255,0.1);}
+        .ipq-check-icon{font-size:18px;margin-right:8px;}
+        .ipq-check-label{flex:1;}
+        .ipq-check-result{font-weight:bold;}
+        @keyframes ipqFadeUp{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
+        .ipq-summary{font-weight:bold;color:var(--status);text-align:center;}
+        .ipq-info{display:flex;gap:12px;width:100%;}
+        .ipq-info-card{flex:1;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);padding:10px;border-radius:8px;text-align:center;transition:box-shadow .2s;}
+        .ipq-info-card:hover{box-shadow:0 0 15px rgba(255,255,255,0.1);}
       </style>
-      <div class="ipq-wrap">
-        <div class="ipq-circle">
-          <video autoplay loop muted src="${clip}"></video>
-          <div class="text"><div class="ipq-status" style="color:${statusColor};">${statusText}</div><div class="ipq-score" style="color:${statusColor};">${risk}</div></div>
+      <div class="ipq-futuristic">
+        <div class="ipq-status-circle">
+          <div class="ring"></div>
+          ${particles}
+          <div class="inner">
+            <div class="ipq-status-text">${statusText}</div>
+            <div class="ipq-score">${risk}</div>
+          </div>
         </div>
-        <ul class="ipq-checklist">
-          <li>${riskPass ? passIcon : failIcon} Risk Score (<30)</li>
-          <li>${blacklistPass ? passIcon : failIcon} Blacklist Check (Clean)</li>
-          <li>${anonymityPass ? passIcon : failIcon} Anonymity Check (No Proxy/VPN/Tor)</li>
-        </ul>
-        <div class="ipq-message" style="color:${statusColor};">${qualified ? 'Your IP is clean and ready to use.' : failMsg}</div>
-        <div class="ipq-details" style="margin-top:10px;">
-          <div><strong>IP:</strong> ${ip} - ${flag} ${city ? city+', ' : ''}${cc}</div>
-          <div><strong>ISP:</strong> ${isp || 'Unknown'}</div>
+        <div class="ipq-checklist">${checklistHTML}</div>
+        <div class="ipq-summary">${qualified ? 'Your IP is clean and ready to use.' : failMsg}</div>
+        <div class="ipq-info">
+          <div class="ipq-info-card"><strong>IP:</strong> ${ip} - ${flag} ${city ? city+', ' : ''}${cc}</div>
+          <div class="ipq-info-card"><strong>ISP:</strong> ${isp || 'Unknown'}</div>
         </div>
       </div>`;
-    createStyledModal('IP Qualification', html);
+    createStyledModal('<span class="ipq-title-icon">🛡️</span> IP Qualification', html);
   }
 
   function showIPModal(info) {
-    const { ip, raw = {}, ...rest } = info || {};
-    const entries = { ...rest, ...raw };
-    delete entries.ip;
-    delete entries.raw;
-    const rows = Object.entries(entries)
-      .map(([k, v]) => `<div><strong style="color: #ffd600;">${k.replace(/_/g, ' ')}:</strong> ${v === undefined ? 'Unknown' : v}</div>`)
-      .join('');
-    const modal = createStyledModal('IP Information', `
-      <div style="background: linear-gradient(120deg, #120f12 80%, #0a0f17 100%); padding: 20px; border-radius: 10px; margin: 10px 0;">
-        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
-          <strong style="color: #39ff14;">IP Address:</strong>
-          <span style="color: #e2e8f0; font-family: monospace;">${ip || 'Unknown'}</span>
-          <button onclick="navigator.clipboard.writeText('${ip || ''}')" style="background: #22c55e; border: none; color: white; padding: 5px 10px; border-radius: 5px; cursor: pointer; font-size: 12px;">Copy</button>
+    const {
+      ip = 'Unknown',
+      country = 'Unknown',
+      city = 'Unknown',
+      postal = 'Unknown',
+      timezone = 'Unknown',
+      isp = 'Unknown'
+    } = info || {};
+
+    const globe = `<svg class="ip-info-header-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`;
+    const mapPin = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 1 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>`;
+    const mail = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><polyline points="3 7 12 13 21 7"/></svg>`;
+    const clock = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
+    const server = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>`;
+    const copySVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+    const checkSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+
+    const modal = createStyledModal(`${globe} IP Information`, `
+      <div class="ip-info-ip-box">
+        <span class="ip-info-address">${ip}</span>
+        <button class="ip-info-copy">${copySVG}<span>Copy</span></button>
+      </div>
+      <div class="ip-info-grid">
+        <div class="ip-info-card">
+          <div class="ip-info-card-icon">${mapPin}</div>
+          <div>
+            <div class="ip-info-card-label">Country</div>
+            <div class="ip-info-card-value">${country}</div>
+          </div>
         </div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; color: #e2e8f0;">
-          ${rows}
+        <div class="ip-info-card">
+          <div class="ip-info-card-icon">${mapPin}</div>
+          <div>
+            <div class="ip-info-card-label">City</div>
+            <div class="ip-info-card-value">${city}</div>
+          </div>
+        </div>
+        <div class="ip-info-card">
+          <div class="ip-info-card-icon">${mail}</div>
+          <div>
+            <div class="ip-info-card-label">Postal Code</div>
+            <div class="ip-info-card-value">${postal}</div>
+          </div>
+        </div>
+        <div class="ip-info-card">
+          <div class="ip-info-card-icon">${clock}</div>
+          <div>
+            <div class="ip-info-card-label">Timezone</div>
+            <div class="ip-info-card-value">${timezone}</div>
+          </div>
+        </div>
+        <div class="ip-info-card ip-info-card-span">
+          <div class="ip-info-card-icon">${server}</div>
+          <div>
+            <div class="ip-info-card-label">ISP</div>
+            <div class="ip-info-card-value">${isp}</div>
+          </div>
         </div>
       </div>
     `);
+
+    const contentEl = modal.querySelector('.styled-modal-content');
+    const headerEl = modal.querySelector('.styled-modal-header');
+    const bodyEl = modal.querySelector('.styled-modal-body');
+    contentEl.classList.add('ip-info-modal');
+    headerEl.classList.add('ip-info-header');
+    bodyEl.classList.add('ip-info-body');
+
+    const style = document.createElement('style');
+    style.textContent = `
+      #zepra-styled-modal .ip-info-modal{background-color:rgba(17,24,39,0.8);backdrop-filter:blur(16px);border:1px solid rgba(56,189,248,0.2);box-shadow:0 0 30px rgba(56,189,248,0.1);border-radius:1.25rem;}
+      #zepra-styled-modal .ip-info-header{background:linear-gradient(90deg,rgba(56,189,248,0.2),rgba(56,189,248,0));border-bottom:1px solid rgba(56,189,248,0.2);}
+      #zepra-styled-modal .ip-info-header h3{margin:0;color:#fff;font-weight:700;display:flex;align-items:center;gap:0.5rem;}
+      #zepra-styled-modal .ip-info-header-icon{width:24px;height:24px;animation:spin 20s linear infinite;}
+      #zepra-styled-modal .ip-info-body{padding:1.5rem;}
+      #zepra-styled-modal .ip-info-ip-box{background-color:rgba(0,0,0,0.3);border:1px solid rgba(56,189,248,0.2);border-radius:0.75rem;padding:0.75rem 1rem;display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;}
+      #zepra-styled-modal .ip-info-address{font-family:monospace;font-size:1.25rem;color:#4ade80;text-shadow:0 0 8px #4ade80;}
+      #zepra-styled-modal .ip-info-copy{display:flex;align-items:center;gap:0.25rem;background-color:rgba(56,189,248,0.15);border:1px solid rgba(56,189,248,0.4);color:#e2e8f0;padding:0.5rem 0.75rem;border-radius:0.5rem;cursor:pointer;transition:all 0.3s;}
+      #zepra-styled-modal .ip-info-copy:hover{background-color:rgba(56,189,248,0.3);}
+      #zepra-styled-modal .ip-info-copy.copied{background-color:rgba(74,222,128,0.25);border-color:#4ade80;color:#4ade80;}
+      #zepra-styled-modal .ip-info-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:1rem;}
+      #zepra-styled-modal .ip-info-card{background-color:rgba(31,41,55,0.5);border:1px solid #374151;border-radius:0.75rem;padding:0.75rem;display:flex;align-items:center;gap:0.5rem;}
+      #zepra-styled-modal .ip-info-card-icon{width:32px;height:32px;display:flex;align-items:center;justify-content:center;background-color:rgba(56,189,248,0.15);border-radius:9999px;flex-shrink:0;}
+      #zepra-styled-modal .ip-info-card-icon svg{width:18px;height:18px;}
+      #zepra-styled-modal .ip-info-card-label{font-size:0.75rem;color:#d1d5db;}
+      #zepra-styled-modal .ip-info-card-value{font-weight:600;color:#fff;}
+      #zepra-styled-modal .ip-info-card-span{grid-column:span 2;}
+      @keyframes spin{from{transform:rotate(0);}to{transform:rotate(360deg);}}
+    `;
+    modal.appendChild(style);
+
+    const copyBtn = modal.querySelector('.ip-info-copy');
+    copyBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(ip);
+        copyBtn.classList.add('copied');
+        copyBtn.innerHTML = `${checkSVG}<span>Copied!</span>`;
+        setTimeout(() => {
+          copyBtn.classList.remove('copied');
+          copyBtn.innerHTML = `${copySVG}<span>Copy</span>`;
+        }, 1500);
+      } catch (e) {}
+    });
   }
 
   async function showFakeInfoModal() {
@@ -1390,13 +1538,13 @@ function init() {
     const modal = document.createElement('div');
     modal.id = 'zepra-modal';
     modal.innerHTML = `
-      <div class="modal-content">
-        <div class="modal-header">
-          <h3 class="zepra-gradient">Zepra Answer</h3>
-          <button class="modal-close">&times;</button>
-        </div>
-        <div class="modal-body">
-          <div class="question-text">${selectedText}</div>
+      <div class="za-modal">
+        <header class="za-header">
+          <h2>Zepra Answer</h2>
+          <button class="modal-close">×</button>
+        </header>
+        <main class="za-body">
+          <div class="za-question-box">${selectedText}</div>
           <div class="answer-container${showReasoning ? ' split' : ''}">
             <div class="loading"></div>
             ${showReasoning ? `
@@ -1413,17 +1561,57 @@ function init() {
               </div>
             </div>
             ` : `
-            <div class="answer-text" style="display: none;"></div>
+            <div class="answer-text" style="display:none;"></div>
             `}
           </div>
-          <div class="modal-actions" style="display: none;">
-            <button class="btn-write-here">Write Here</button>
-            <button class="btn-write-all">Write All</button>
-            ${showReasoning ? '' : '<button class="btn-copy">Copy</button>'}
-            <button class="btn-humanizer">AI Humanizer</button>
-            <button class="btn-use-prompt">Use Custom Prompt</button>
+        </main>
+        <footer class="za-footer">
+          <div class="modal-actions" style="display:none;">
+            <button class="btn-write-here action-btn" data-color="cyan">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12.67 19a2 2 0 0 0 1.416-.588l6.154-6.172a6 6 0 0 0-8.49-8.49L5.586 9.914A2 2 0 0 0 5 11.328V18a1 1 0 0 0 1 1z" />
+                <path d="M16 8 2 22" />
+                <path d="M17.5 15H9" />
+              </svg>
+              <span>Write Here</span>
+            </button>
+            <button class="btn-write-all action-btn" data-color="gray">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12.67 19a2 2 0 0 0 1.416-.588l6.154-6.172a6 6 0 0 0-8.49-8.49L5.586 9.914A2 2 0 0 0 5 11.328V18a1 1 0 0 0 1 1z" />
+                <path d="M16 8 2 22" />
+                <path d="M17.5 15H9" />
+              </svg>
+              <span>Write All</span>
+            </button>
+            ${showReasoning ? '' : `<button class="btn-copy action-btn" data-color="pink">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+                <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+              </svg>
+              <span>Copy</span>
+            </button>`}
+            <button class="btn-humanizer action-btn" data-color="teal">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M15 4V2" />
+                <path d="M15 16v-2" />
+                <path d="M8 9h2" />
+                <path d="M20 9h2" />
+                <path d="M17.8 11.8 19 13" />
+                <path d="M15 9h.01" />
+                <path d="M17.8 6.2 19 5" />
+                <path d="m3 21 9-9" />
+                <path d="M12.2 6.2 11 5" />
+              </svg>
+              <span>AI Humanizer</span>
+            </button>
+            <button class="btn-use-prompt action-btn" data-color="yellow">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z" />
+              </svg>
+              <span>Use Custom Prompt</span>
+            </button>
           </div>
-        </div>
+        </footer>
       </div>
     `;
 
@@ -1433,7 +1621,8 @@ function init() {
       left: 0;
       width: 100%;
       height: 100%;
-      background: rgba(0, 0, 0, 0.7);
+      background-color: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(4px);
       z-index: 2147483647;
       display: flex;
       align-items: center;
@@ -1448,146 +1637,162 @@ function init() {
         to { opacity: 1; }
       }
 
-      @keyframes rainbowBorder {
-        0% { border-color: #ff6b6b; box-shadow: 0 0 20px #ff6b6b; }
-        16% { border-color: #4ecdc4; box-shadow: 0 0 20px #4ecdc4; }
-        32% { border-color: #45b7d1; box-shadow: 0 0 20px #45b7d1; }
-        48% { border-color: #96ceb4; box-shadow: 0 0 20px #96ceb4; }
-        64% { border-color: #feca57; box-shadow: 0 0 20px #feca57; }
-        80% { border-color: #ff9ff3; box-shadow: 0 0 20px #ff9ff3; }
-        100% { border-color: #ff6b6b; box-shadow: 0 0 20px #ff6b6b; }
-      }
-
       .answer-container.split .split-pane{display:flex;gap:10px;}
       .answer-container.split .pane{flex:1;background:#1f1f1f;padding:10px;border-radius:6px;display:flex;flex-direction:column;}
       .answer-container.split .pane-title{font-weight:bold;margin-bottom:6px;}
       .answer-container.split .pane button{align-self:flex-end;margin-top:8px;}
-      .thinking-icon{display:inline-block;margin-right:6px;animation:pulse 1s infinite;}
-      @keyframes pulse{0%,100%{filter:drop-shadow(0 0 0 #39ff14);}50%{filter:drop-shadow(0 0 6px #39ff14);}}
 
-      .modal-content {
-        background: linear-gradient(135deg, #23272b 0%, #120f12 100%);
-        border-radius: 15px;
-        padding: 0;
-        max-width: 500px;
+      .za-modal {
+        background-color: rgba(17,24,39,0.8);
+        backdrop-filter: blur(16px);
+        border: 1px solid rgba(244,63,94,0.2);
+        box-shadow: 0 0 30px rgba(244,63,94,0.1);
+        border-radius: 1rem;
         width: 90%;
-        max-height: 80vh;
-        overflow: hidden;
-        border: 3px solid #ff6b6b;
-        animation: rainbowBorder 3s linear infinite;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-      }
-      
-      .modal-header {
-        background: rgba(0,0,0,0.2);
-        padding: 15px 20px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        border-bottom: 1px solid #292d33;
-      }
-      
-      .modal-header h3 {
-        margin: 0;
-        color: #39ff14;
-        font-size: 18px;
-        font-weight: bold;
-      }
-      
-      .modal-close {
-        background: none;
-        border: none;
-        color: #e2e8f0;
-        font-size: 24px;
-        cursor: pointer;
-        padding: 0;
-        width: 30px;
-        height: 30px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: background 0.2s;
-      }
-      
-      .modal-close:hover {
-        background: rgba(255,255,255,0.2);
-      }
-      
-      .modal-body {
-        padding: 20px;
-        color: #e2e8f0;
-        max-height: 70vh;
-        overflow-y: auto;
+        max-width: 600px;
+        max-height: 85vh;
+        display:flex;
+        flex-direction:column;
+        overflow:hidden;
       }
 
-      .question-text {
-        background: rgba(0,0,0,0.2);
-        padding: 15px;
-        border-radius: 10px;
-        margin-bottom: 20px;
-        font-style: italic;
-        border-left: 4px solid #feca57;
-        max-height: 200px;
-        overflow-y: auto;
+      .za-header,
+      .za-footer {
+        padding: 1rem 1.25rem;
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        border-bottom:1px solid rgba(244,63,94,0.2);
+      }
+
+      .za-footer {
+        border-bottom:none;
+        border-top:1px solid rgba(244,63,94,0.2);
+      }
+
+      .za-header h2 {
+        color: #4ade80;
+        margin:0;
+        font-size:1.25rem;
+        text-shadow:0 0 8px #4ade80;
+      }
+
+      .modal-close {
+        background:none;
+        border:none;
+        color:#e2e8f0;
+        font-size:1.25rem;
+        width:2rem;
+        height:2rem;
+        border-radius:9999px;
+        cursor:pointer;
+        transition:background .2s;
+      }
+
+      .modal-close:hover {
+        background:rgba(255,255,255,0.1);
+      }
+
+      .za-body {
+        padding:1.25rem;
+        color:#e2e8f0;
+        overflow-y:auto;
+      }
+
+      .za-question-box {
+        background:rgba(17,24,39,0.5);
+        border-left:2px solid #facc15;
+        box-shadow:-2px 0 8px #facc15;
+        padding:1rem;
+        border-radius:0.5rem;
+        margin-bottom:1rem;
+        max-height:200px;
+        overflow-y:auto;
       }
 
       .answer-container {
-        background: rgba(255,255,255,0.1);
-        padding: 15px;
-        border-radius: 10px;
-        margin-bottom: 20px;
-        min-height: 60px;
-        max-height: 300px;
-        overflow-y: auto;
-      }
-      
-      .loading {
-        text-align: center;
-        opacity: 0.7;
-        animation: pulse 1.5s ease-in-out infinite;
-      }
-      
-      @keyframes pulse {
-        0%, 100% { opacity: 0.7; }
-        50% { opacity: 1; }
-      }
-      
-      .answer-text {
-        line-height: 1.6;
-        white-space: pre-wrap;
-      }
-      
-      .modal-actions {
-        display: flex;
-        gap: 10px;
-        justify-content: center;
-      }
-      
-      .modal-actions button {
-        background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
-        border: none;
-        color: white;
-        padding: 10px 20px;
-        border-radius: 25px;
-        cursor: pointer;
-        font-weight: bold;
-        transition: transform 0.2s, box-shadow 0.2s;
-      }
-      
-      .modal-actions button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-      }
-      
-      .btn-write-here {
-        background: linear-gradient(45deg, #4ecdc4, #44a08d) !important;
+        display:flex;
+        flex-direction:column;
+        gap:0.75rem;
+        min-height:60px;
       }
 
-      .btn-use-prompt {
-        background: linear-gradient(45deg, #ffd600, #39ff14) !important;
-        color: #181c20 !important;
+      .answer-text {
+        display:none;
+        flex-direction:column;
+        gap:0.75rem;
       }
+
+      .answer-card {
+        background-color:rgba(31,41,55,0.6);
+        border:1px solid #374151;
+        padding:1rem;
+        border-radius:0.5rem;
+      }
+
+      .loading {
+        text-align:center;
+        padding:1rem;
+        animation:pulse 1.5s ease-in-out infinite;
+      }
+
+      @keyframes pulse {
+        0%,100%{opacity:0.6;}
+        50%{opacity:1;}
+      }
+
+      .modal-actions {
+        display:flex;
+        gap:0.75rem;
+        width:100%;
+      }
+
+      .action-btn {
+        flex:1;
+        display:flex;
+        flex-direction:column;
+        align-items:center;
+        justify-content:center;
+        gap:0.25rem;
+        padding:0.75rem;
+        border:none;
+        border-radius:0.5rem;
+        color:#f8fafc;
+        cursor:pointer;
+        position:relative;
+        overflow:hidden;
+        transition:transform .2s;
+      }
+
+      .action-btn .icon {
+        width:24px;
+        height:24px;
+      }
+
+      .action-btn::before {
+        content:'';
+        position:absolute;
+        inset:0;
+        border-radius:0.5rem;
+        opacity:0;
+        transition:opacity .2s;
+        background:radial-gradient(circle at center, rgba(255,255,255,0.4), transparent 70%);
+        filter:blur(12px);
+      }
+
+      .action-btn:hover::before {
+        opacity:1;
+      }
+
+      .action-btn:hover {
+        transform:translateY(-2px);
+      }
+
+      .action-btn[data-color="cyan"] { background:#06b6d4; }
+      .action-btn[data-color="gray"] { background:#4b5563; }
+      .action-btn[data-color="pink"] { background:#f472b6; }
+      .action-btn[data-color="teal"] { background:#14b8a6; }
+      .action-btn[data-color="yellow"] { background:#facc15; color:#1f2937; }
     `;
 
     document.head.appendChild(style);
@@ -1660,8 +1865,8 @@ function init() {
           });
         } else {
           const ansEl = modal.querySelector('.answer-text');
-          ansEl.style.display = 'block';
-          ansEl.textContent = answer;
+          ansEl.style.display = 'flex';
+          ansEl.innerHTML = answer.split('\n').map(a => `<div class="answer-card">${a}</div>`).join('');
           modal.querySelector('.modal-actions').style.display = 'flex';
           modal.querySelector('.btn-copy').addEventListener('click', () => {
             navigator.clipboard.writeText(answer);
