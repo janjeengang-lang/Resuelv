@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Zepra Login</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="theme.js"></script>
+  <style>
+    body {
+      margin: 0;
+      width: 320px;
+      height: 400px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: 'Segoe UI', Tahoma, sans-serif;
+      overflow: hidden;
+    }
+    .box {
+      position: relative;
+      width: 100%;
+      max-width: 280px;
+      padding: 40px 30px;
+      background: var(--card);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .box::before {
+      content: '';
+      position: absolute;
+      inset: -2px;
+      border-radius: inherit;
+      background: linear-gradient(45deg,var(--accent),var(--accent2),var(--accent));
+      background-size: 400% 400%;
+      animation: borderGlow 6s linear infinite;
+      z-index: -2;
+    }
+    .box::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      padding: 2px;
+      background: conic-gradient(from 0deg,var(--accent),var(--accent2),var(--accent));
+      filter: blur(10px);
+      animation: spin 4s linear infinite;
+      z-index: -1;
+      pointer-events: none;
+    }
+    @keyframes borderGlow {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    h1 {
+      margin: 10px 0 20px;
+      text-align: center;
+      font-size: 1.6rem;
+    }
+    input {
+      width: 100%;
+      margin: 8px 0;
+      padding: 10px;
+      border-radius: 6px;
+      border: 1px solid #334155;
+      background: #0b1220;
+      color: var(--fg);
+    }
+    button {
+      width: 100%;
+      margin-top: 10px;
+      padding: 10px;
+      border: none;
+      border-radius: 6px;
+      background: var(--accent);
+      color: #0b1215;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    button:hover { filter: brightness(1.1); transform: translateY(-2px) scale(1.02); }
+    button:active { transform: scale(0.98); }
+    #loginError {
+      margin-top: 12px;
+      text-align: center;
+      min-height: 20px;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div id="headerWrap" class="header-video"><video id="headerVideo" autoplay loop muted src="src/media/key.webm"></video></div>
+    <h1 class="zepra-gradient">Zepra</h1>
+    <input type="email" id="email" placeholder="Enter your email" />
+    <input type="password" id="password" placeholder="Enter your password" />
+    <button id="loginBtn">Access Zepra</button>
+    <div id="loginError"></div>
+  </div>
+  <script src="login.js"></script>
+</body>
+</html>
+

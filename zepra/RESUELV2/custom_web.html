@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Custom Sites</title>
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    /* Root layout */
+    body {
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: #000;
+      position: relative;
+    }
+
+    #custom-site-root {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+    }
+
+    /* Floating particles */
+    .particles {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .particles span {
+      position: absolute;
+      width: 4px;
+      height: 4px;
+      background: rgba(74, 222, 128, 0.3);
+      border-radius: 50%;
+      animation: float 8s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+
+    /* Frame container */
+    .cs-frame {
+      position: relative;
+      z-index: 1;
+      width: 90%;
+      height: 90%;
+      display: flex;
+      flex-direction: column;
+      background-color: rgba(17, 24, 39, 0.5);
+      backdrop-filter: blur(24px);
+      border: 1px solid rgba(74, 222, 128, 0.2);
+      box-shadow: 0 0 40px rgba(10, 70, 30, 0.5);
+      border-radius: 1.25rem;
+      overflow: hidden;
+    }
+
+    /* Header */
+    .cs-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.5rem 1rem;
+      background-color: rgba(0, 0, 0, 0.2);
+      border-bottom: 1px solid rgba(74, 222, 128, 0.2);
+    }
+
+    .cs-header-left {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: #4ade80;
+    }
+
+    .cs-header-left svg {
+      width: 20px;
+      height: 20px;
+      flex-shrink: 0;
+    }
+
+    .cs-header-left h2 {
+      font-size: 1rem;
+      margin: 0;
+    }
+
+    /* Site selector */
+    .cs-header-center {
+      position: relative;
+    }
+
+    #siteSelect {
+      appearance: none;
+      background-color: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(74, 222, 128, 0.3);
+      color: #e2e8f0;
+      padding: 0.25rem 2rem 0.25rem 0.5rem;
+      border-radius: 0.5rem;
+      min-width: 12rem;
+      cursor: pointer;
+    }
+
+    /* Action buttons */
+    .cs-header-right {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+
+    .icon-btn {
+      position: relative;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      border-radius: 50%;
+      background: transparent;
+      color: #4ade80;
+      cursor: pointer;
+      transition: background 0.2s ease;
+      font-size: 0; /* hide any text content */
+    }
+
+    .icon-btn:hover {
+      background-color: rgba(74, 222, 128, 0.1);
+    }
+
+    .icon-btn svg {
+      width: 18px;
+      height: 18px;
+      pointer-events: none;
+    }
+
+    /* Tooltip */
+    .icon-btn::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      bottom: 120%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #000;
+      color: #fff;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      white-space: nowrap;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s;
+    }
+
+    .icon-btn:hover::after {
+      opacity: 1;
+    }
+
+    #toggleSelect::before {
+      content: "";
+      display: block;
+      width: 18px;
+      height: 18px;
+      background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="%234ade80"><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.477 0 8.268 2.943 9.542 7-1.274 4.057-5.065 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>') center/contain no-repeat;
+    }
+
+    /* Content area */
+    .cs-content {
+      flex-grow: 1;
+      margin: 0.5rem;
+      border: 2px dashed rgba(74, 222, 128, 0.2);
+      border-radius: 1rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .cs-content iframe {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="custom-site-root">
+    <div class="particles"></div>
+    <div class="cs-frame">
+      <header class="cs-header">
+        <div class="cs-header-left">
+          <!-- Globe icon -->
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          <h2>Custom Site</h2>
+        </div>
+        <div class="cs-header-center">
+          <select id="siteSelect"></select>
+        </div>
+        <div class="cs-header-right">
+          <button id="writeHereBtn" class="icon-btn" data-tooltip="Write Here" aria-label="Write Here">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+          </button>
+          <button id="clearDataBtn" class="icon-btn" data-tooltip="Remove Cookies" aria-label="Remove Cookies">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+          </button>
+          <button id="toggleSelect" class="icon-btn" data-tooltip="Toggle Select" aria-label="Toggle Select"></button>
+        </div>
+      </header>
+      <main class="cs-content" id="container"></main>
+    </div>
+  </div>
+
+  <script>
+    const particleContainer = document.querySelector('.particles');
+    for (let i = 0; i < 20; i++) {
+      const span = document.createElement('span');
+      span.style.left = Math.random() * 100 + '%';
+      span.style.top = Math.random() * 100 + '%';
+      span.style.animationDelay = (Math.random() * 5) + 's';
+      particleContainer.appendChild(span);
+    }
+  </script>
+  <script src="custom_web.js"></script>
+</body>
+</html>
+
