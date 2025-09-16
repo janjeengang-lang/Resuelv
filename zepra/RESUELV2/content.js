@@ -19,7 +19,37 @@ function init() {
     selBtn: null,
     lastFocused: null,
     lastMouse: { x: 20, y: 20 },
-    fillIcon: null
+    fillIcon: null,
+    surveyAgent: {
+      domTree: null,
+      highlightLookup: new Map(),
+      nodeById: new Map(),
+      parentById: new Map(),
+      lastUpdated: 0,
+      ocrCache: new Map(),
+      ocrCacheUrl: '',
+      session: {
+        running: false,
+        stopRequested: false,
+        status: 'idle',
+        history: [],
+        logs: [],
+        chat: [],
+        startedAt: 0,
+        completedAt: 0,
+        planCount: 0,
+        errorCount: 0,
+        maxSteps: 40,
+        instructions: '',
+        goal: '',
+        loopPromise: null,
+      },
+      ui: {
+        modal: null,
+        styleEl: null,
+        elements: null,
+      },
+    }
   };
 
   let customPrompts = [];
@@ -27,6 +57,2426 @@ function init() {
   chrome.storage.onChanged.addListener((chg, area) => {
     if(area === 'sync' && chg.customPrompts){ customPrompts = chg.customPrompts.newValue || []; }
   });
+
+  let activeIdentity = null;
+
+  let domBuilderModulePromise = null;
+
+  function loadDomBuilderModule() {
+    if (!domBuilderModulePromise) {
+      domBuilderModulePromise = import(chrome.runtime.getURL('src/dom/buildDomTree.js')).catch(err => {
+        domBuilderModulePromise = null;
+        throw err;
+      });
+    }
+    return domBuilderModulePromise;
+  }
+
+  async function collectSurveyDomTree(options = {}) {
+    const module = await loadDomBuilderModule();
+    if (!module || typeof module.buildDomTree !== 'function') {
+      throw new Error('DOM builder unavailable');
+    }
+    const {
+      showHighlights = false,
+      focusHighlightIndex = -1,
+      viewportExpansion = 0,
+      startHighlightIndex = 0,
+      startId = 0,
+      debugMode = false
+    } = options || {};
+
+    const tree = await module.buildDomTree({
+      showHighlightElements: Boolean(showHighlights),
+      focusHighlightIndex: Number.isInteger(focusHighlightIndex) ? focusHighlightIndex : -1,
+      viewportExpansion: Number.isFinite(viewportExpansion) ? viewportExpansion : 0,
+      startHighlightIndex: Number.isInteger(startHighlightIndex) ? startHighlightIndex : 0,
+      startId: Number.isInteger(startId) ? startId : 0,
+      debugMode: Boolean(debugMode)
+    });
+
+    updateSurveyAgentDomCache(tree);
+
+    await augmentSurveyAgentDomTree(tree, options);
+
+    return tree;
+  }
+
+  function updateSurveyAgentDomCache(tree) {
+    const { highlightLookup, nodeById, parentById } = buildSurveyAgentLookups(tree);
+    STATE.surveyAgent.domTree = tree || null;
+    STATE.surveyAgent.highlightLookup = highlightLookup;
+    STATE.surveyAgent.nodeById = nodeById;
+    STATE.surveyAgent.parentById = parentById;
+    STATE.surveyAgent.lastUpdated = Date.now();
+
+    try {
+      window.__zepraSurveyAgentCache = {
+        lastUpdated: STATE.surveyAgent.lastUpdated,
+        highlightIndices: Array.from(highlightLookup.keys()),
+      };
+    } catch (e) {
+      // Ignore serialization issues
+    }
+  }
+
+  function buildSurveyAgentLookups(tree) {
+    const highlightLookup = new Map();
+    const nodeById = new Map();
+    const parentById = new Map();
+
+    if (!tree || typeof tree !== 'object' || !tree.map) {
+      return { highlightLookup, nodeById, parentById };
+    }
+
+    const entries = Object.entries(tree.map);
+    for (const [id, node] of entries) {
+      nodeById.set(id, node);
+      if (node && Array.isArray(node.children)) {
+        for (const childId of node.children) {
+          parentById.set(childId, id);
+        }
+      }
+    }
+
+    const buildFrameChain = (nodeId) => {
+      const chain = [];
+      let currentId = parentById.get(nodeId);
+      while (currentId) {
+        const parentNode = nodeById.get(currentId);
+        if (!parentNode) break;
+        if ((parentNode.tagName || '').toLowerCase() === 'iframe') {
+          chain.unshift({
+            nodeId: currentId,
+            xpath: parentNode.xpath || '',
+            attributes: parentNode.attributes || {},
+          });
+        }
+        currentId = parentById.get(currentId);
+      }
+      return chain;
+    };
+
+    for (const [id, node] of nodeById.entries()) {
+      if (node && Number.isInteger(node.highlightIndex)) {
+        highlightLookup.set(node.highlightIndex, {
+          nodeId: id,
+          xpath: node.xpath || '',
+          tagName: node.tagName || '',
+          attributes: node.attributes || {},
+          frameChain: buildFrameChain(id),
+        });
+      }
+    }
+
+    return { highlightLookup, nodeById, parentById };
+  }
+
+  function formatIdentityPreviewValue(value, max = 80) {
+    if (value == null) return '';
+    const text = String(value).trim();
+    if (!text) return '';
+    return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+  }
+
+  function getActiveIdentitySnapshot() {
+    if (!activeIdentity || typeof activeIdentity !== 'object') return null;
+    const snapshot = {};
+    const push = (key, value) => {
+      if (snapshot[key]) return;
+      if (typeof value !== 'string') return;
+      const trimmed = value.trim();
+      if (!trimmed) return;
+      snapshot[key] = trimmed;
+    };
+    for (const key of SURVEY_AGENT_IDENTITY_FIELD_ORDER) {
+      if (Object.prototype.hasOwnProperty.call(activeIdentity, key)) {
+        push(key, activeIdentity[key]);
+      }
+    }
+    if (Object.keys(snapshot).length < 12) {
+      for (const [key, value] of Object.entries(activeIdentity)) {
+        if (snapshot[key]) continue;
+        if (/^(id|profilePictureUrl)$/i.test(key)) continue;
+        push(key, value);
+        if (Object.keys(snapshot).length >= 24) break;
+      }
+    }
+    return Object.keys(snapshot).length ? snapshot : null;
+  }
+
+  function buildLocatorForNode(nodeId, node) {
+    const locator = {};
+    if (Number.isInteger(node?.highlightIndex)) locator.highlightIndex = node.highlightIndex;
+    if (nodeId) locator.nodeId = String(nodeId);
+    if (node?.xpath) locator.xpath = node.xpath;
+    if (Array.isArray(node?.frameChain)) locator.frameChain = node.frameChain;
+    return locator;
+  }
+
+  function shouldAttemptAutoOcr(node) {
+    if (!node || typeof node !== 'object') return false;
+    const tag = (node.tagName || '').toLowerCase();
+    if (tag !== 'img' && tag !== 'svg' && tag !== 'canvas') return false;
+    if (node.isVisible === false) return false;
+    if (typeof node.ocrText === 'string' && node.ocrText.length) return false;
+    const attrs = node.attributes || {};
+    const alt = typeof attrs.alt === 'string' ? attrs.alt.trim() : '';
+    const aria = typeof attrs['aria-label'] === 'string' ? attrs['aria-label'].trim() : '';
+    if ((alt && alt.length > 3) || (aria && aria.length > 3)) return false;
+    return true;
+  }
+
+  function annotateIdentityHintsOnTree(tree) {
+    const snapshot = getActiveIdentitySnapshot();
+    const map = tree?.map;
+    if (!map) return;
+    const eligible = new Set(['input', 'textarea', 'select']);
+    for (const [nodeId, node] of Object.entries(map)) {
+      if (!node || typeof node !== 'object') continue;
+      const tag = (node.tagName || '').toLowerCase();
+      if (!eligible.has(tag)) {
+        if (node.identityKey) {
+          delete node.identityKey;
+          delete node.identityPreview;
+        }
+        continue;
+      }
+      const locator = buildLocatorForNode(nodeId, node);
+      const resolved = resolveSurveyAgentElement(locator);
+      const element = resolved.element;
+      if (!element) {
+        if (node.identityKey) {
+          delete node.identityKey;
+          delete node.identityPreview;
+        }
+        continue;
+      }
+      const key = detectField(element);
+      if (key) {
+        node.identityKey = key;
+        if (snapshot && snapshot[key]) {
+          node.identityPreview = formatIdentityPreviewValue(snapshot[key]);
+        } else {
+          delete node.identityPreview;
+        }
+      } else if (node.identityKey) {
+        delete node.identityKey;
+        delete node.identityPreview;
+      }
+    }
+  }
+
+  async function annotateSurveyImagesWithOcr(tree, options = {}) {
+    const map = tree?.map;
+    if (!map) return;
+    const state = STATE.surveyAgent;
+    if (!state.ocrCache || !(state.ocrCache instanceof Map)) {
+      state.ocrCache = new Map();
+    }
+    const cache = state.ocrCache;
+    const targets = [];
+    for (const [nodeId, node] of Object.entries(map)) {
+      if (!shouldAttemptAutoOcr(node)) continue;
+      const cacheKey = node.xpath || `${nodeId}`;
+      if (cache.has(cacheKey)) {
+        const cached = cache.get(cacheKey);
+        if (typeof cached === 'string' && cached.trim()) {
+          node.ocrText = cached;
+        }
+        continue;
+      }
+      targets.push({ nodeId, node, cacheKey });
+    }
+    if (!targets.length) return;
+    const slice = targets.slice(0, SURVEY_AGENT_MAX_AUTO_OCR);
+    const settings = await chrome.storage.local.get('ocrLang');
+    const ocrLang = settings?.ocrLang || 'eng';
+    const tabId = await getTabId();
+    for (const target of slice) {
+      const locator = buildLocatorForNode(target.nodeId, target.node);
+      const resolved = resolveSurveyAgentElement(locator);
+      const element = resolved.element;
+      if (!element) {
+        cache.set(target.cacheKey, '');
+        continue;
+      }
+      const rect = element.getBoundingClientRect();
+      if (!rect) {
+        cache.set(target.cacheKey, '');
+        continue;
+      }
+      if (
+        rect.width < SURVEY_AGENT_OCR_MIN_EDGE ||
+        rect.height < SURVEY_AGENT_OCR_MIN_EDGE ||
+        rect.bottom < 0 ||
+        rect.top > window.innerHeight ||
+        rect.right < 0 ||
+        rect.left > window.innerWidth
+      ) {
+        cache.set(target.cacheKey, '');
+        continue;
+      }
+      try {
+        const response = await chrome.runtime.sendMessage({
+          type: 'CAPTURE_AND_OCR',
+          rect: {
+            x: rect.left,
+            y: rect.top,
+            width: rect.width,
+            height: rect.height,
+            dpr: window.devicePixelRatio || 1,
+          },
+          tabId,
+          ocrLang,
+        });
+        if (response?.ok && response.text) {
+          const text = String(response.text).trim();
+          if (text) {
+            target.node.ocrText = text;
+            cache.set(target.cacheKey, text);
+          } else {
+            cache.set(target.cacheKey, '');
+          }
+        } else {
+          cache.set(target.cacheKey, '');
+        }
+      } catch (err) {
+        console.warn('Survey agent OCR error', err);
+        cache.set(target.cacheKey, '');
+      }
+      await sleep(120);
+    }
+  }
+
+  async function augmentSurveyAgentDomTree(tree, options = {}) {
+    if (!tree || typeof tree !== 'object' || !tree.map) return;
+    const state = STATE.surveyAgent;
+    if (state.ocrCacheUrl !== location.href) {
+      state.ocrCache = new Map();
+      state.ocrCacheUrl = location.href;
+    }
+    try {
+      annotateIdentityHintsOnTree(tree);
+    } catch (err) {
+      console.warn('Survey agent identity annotation failed', err);
+    }
+    try {
+      await annotateSurveyImagesWithOcr(tree, options);
+    } catch (err) {
+      console.warn('Survey agent OCR annotation failed', err);
+    }
+  }
+
+  function buildSurveyAgentPlanningContext() {
+    const identitySnapshot = getActiveIdentitySnapshot();
+    const preview = identitySnapshot
+      ? Object.fromEntries(
+          Object.entries(identitySnapshot).map(([key, value]) => [key, formatIdentityPreviewValue(value)])
+        )
+      : null;
+    const context = {
+      page: {
+        url: location.href,
+        title: document.title,
+      },
+    };
+    const docLang = document.documentElement?.lang;
+    if (docLang) {
+      context.page.language = docLang;
+    } else if (navigator.language) {
+      context.page.language = navigator.language;
+    }
+    if (identitySnapshot) {
+      context.identity = identitySnapshot;
+      context.identityPreview = preview;
+    }
+    return context;
+  }
+
+  const SURVEY_AGENT_DEFAULT_GOAL = 'Complete the active survey page.';
+  const SURVEY_AGENT_MAX_PLAN_ERRORS = 3;
+  const SURVEY_AGENT_MAX_LOGS = 80;
+  const SURVEY_AGENT_HISTORY_LIMIT = 12;
+  const SURVEY_AGENT_MAX_CHAT_MESSAGES = 60;
+  const SURVEY_AGENT_CHAT_CONTEXT_LIMIT = 12;
+  const SURVEY_AGENT_MAX_AUTO_OCR = 4;
+  const SURVEY_AGENT_OCR_MIN_EDGE = 24;
+  const SURVEY_AGENT_IDENTITY_FIELD_ORDER = [
+    'identityName',
+    'fullName',
+    'firstName',
+    'lastName',
+    'username',
+    'password',
+    'email',
+    'phone',
+    'age',
+    'address1',
+    'address2',
+    'city',
+    'state',
+    'zipCode',
+    'country',
+    'companyName',
+    'companyIndustry',
+    'companySize',
+    'companyAnnualRevenue',
+    'companyWebsite',
+    'companyAddress',
+    'macAddress',
+  ];
+
+  function getSurveyAgentSession() {
+    return STATE.surveyAgent.session;
+  }
+
+  function getSurveyAgentUiState() {
+    return STATE.surveyAgent.ui;
+  }
+
+  function ensureSurveyAgentStyles() {
+    const ui = getSurveyAgentUiState();
+    if (ui.styleEl && ui.styleEl.isConnected) return;
+    const style = document.createElement('style');
+    style.id = 'zepra-survey-agent-styles';
+    style.textContent = `
+      #zepra-survey-agent-panel {
+        position: fixed;
+        top: 0;
+        right: 0;
+        height: 100vh;
+        width: min(420px, 100vw);
+        z-index: 2147483646;
+        display: flex;
+        flex-direction: column;
+        transform: translateX(110%);
+        transition: transform 0.28s ease, box-shadow 0.28s ease;
+        pointer-events: none;
+      }
+
+      #zepra-survey-agent-panel.is-open {
+        transform: translateX(0);
+        box-shadow: -32px 0 64px rgba(15, 23, 42, 0.65);
+        pointer-events: auto;
+      }
+
+      #zepra-survey-agent-panel.is-closing {
+        pointer-events: none;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-shell {
+        background: linear-gradient(205deg, rgba(15, 23, 42, 0.96), rgba(2, 6, 23, 0.98));
+        color: #e2e8f0;
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        width: 100%;
+        border-left: 1px solid rgba(148, 163, 184, 0.18);
+        backdrop-filter: blur(18px);
+        box-shadow: inset 0 1px 0 rgba(148, 163, 184, 0.04);
+      }
+
+      #zepra-survey-agent-panel .survey-agent-shell-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 1.05rem 1.25rem;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+        background: linear-gradient(180deg, rgba(15, 23, 42, 0.78), rgba(15, 23, 42, 0.52));
+      }
+
+      #zepra-survey-agent-panel .survey-agent-shell-title {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-shell-heading {
+        font-size: 1.05rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #f8fafc;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-shell-subtitle {
+        font-size: 0.7rem;
+        letter-spacing: 0.32em;
+        text-transform: uppercase;
+        color: #94a3b8;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-shell-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-close {
+        background: rgba(15, 23, 42, 0.6);
+        border: 1px solid rgba(148, 163, 184, 0.3);
+        color: #e2e8f0;
+        width: 34px;
+        height: 34px;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.35rem;
+        cursor: pointer;
+        transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-close:hover {
+        background: rgba(30, 41, 59, 0.85);
+        border-color: rgba(148, 163, 184, 0.6);
+        color: #38bdf8;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-shell-body {
+        flex: 1;
+        padding: 1.2rem 1.3rem 1.4rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1.1rem;
+        overflow-y: auto;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-shell-body::-webkit-scrollbar {
+        width: 6px;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-shell-body::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-shell-body::-webkit-scrollbar-thumb {
+        background: rgba(94, 234, 212, 0.32);
+        border-radius: 999px;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-status {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 0.95rem 1.05rem;
+        border-radius: 1rem;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        background: linear-gradient(140deg, rgba(15, 23, 42, 0.85), rgba(12, 20, 34, 0.75));
+        box-shadow: 0 18px 40px -28px rgba(59, 130, 246, 0.45);
+      }
+
+      #zepra-survey-agent-panel .survey-agent-status-left {
+        display: flex;
+        align-items: center;
+        gap: 0.9rem;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-status-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.45);
+        box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.18);
+        transition: all 0.25s ease;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-status-dot.is-running {
+        background: linear-gradient(135deg, #38bdf8, #22d3ee);
+        box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.22), 0 0 16px rgba(34, 211, 238, 0.55);
+        animation: surveyAgentPulse 1.4s ease-in-out infinite;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-status-dot.is-success {
+        background: linear-gradient(135deg, #22c55e, #4ade80);
+        box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.24), 0 0 16px rgba(74, 222, 128, 0.5);
+      }
+
+      #zepra-survey-agent-panel .survey-agent-status-dot.is-warning {
+        background: linear-gradient(135deg, #facc15, #f97316);
+        box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.24), 0 0 16px rgba(249, 115, 22, 0.5);
+      }
+
+      #zepra-survey-agent-panel .survey-agent-status-dot.is-error {
+        background: linear-gradient(135deg, #f87171, #ef4444);
+        box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.24), 0 0 16px rgba(239, 68, 68, 0.5);
+      }
+
+      #zepra-survey-agent-panel .survey-agent-status-dot.is-idle {
+        background: rgba(148, 163, 184, 0.45);
+      }
+
+      @keyframes surveyAgentPulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.16); }
+      }
+
+      #zepra-survey-agent-panel .survey-agent-status-text {
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        font-size: 0.7rem;
+        color: #e0f2fe;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-status-meta {
+        font-size: 0.78rem;
+        color: #94a3b8;
+        margin-top: 0.15rem;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-controls {
+        display: flex;
+        gap: 0.75rem;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-btn {
+        flex: 1;
+        border-radius: 0.85rem;
+        border: 1px solid transparent;
+        padding: 0.75rem 1rem;
+        font-size: 0.85rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-btn.start {
+        background: linear-gradient(135deg, rgba(56, 189, 248, 0.25), rgba(14, 165, 233, 0.35));
+        border-color: rgba(56, 189, 248, 0.45);
+        color: #e0f2fe;
+        box-shadow: 0 10px 22px -18px rgba(56, 189, 248, 0.8);
+      }
+
+      #zepra-survey-agent-panel .survey-agent-btn.start:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 16px 32px -18px rgba(56, 189, 248, 0.9);
+        background: linear-gradient(135deg, rgba(56, 189, 248, 0.35), rgba(14, 165, 233, 0.45));
+      }
+
+      #zepra-survey-agent-panel .survey-agent-btn.stop {
+        background: linear-gradient(135deg, rgba(239, 68, 68, 0.18), rgba(248, 113, 113, 0.2));
+        border-color: rgba(248, 113, 113, 0.45);
+        color: #fecaca;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-btn.stop:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 16px 32px -18px rgba(248, 113, 113, 0.75);
+        background: linear-gradient(135deg, rgba(239, 68, 68, 0.25), rgba(248, 113, 113, 0.28));
+      }
+
+      #zepra-survey-agent-panel .survey-agent-btn:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+        transform: none;
+        box-shadow: none;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-notes-wrap {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        padding: 1rem 1.05rem;
+        border-radius: 1rem;
+        border: 1px solid rgba(148, 163, 184, 0.14);
+        background: rgba(15, 23, 42, 0.55);
+        box-shadow: inset 0 1px 0 rgba(148, 163, 184, 0.08);
+      }
+
+      #zepra-survey-agent-panel .survey-agent-notes-wrap label {
+        font-size: 0.72rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: #cbd5f5;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-notes {
+        resize: vertical;
+        min-height: 68px;
+        max-height: 160px;
+        border-radius: 0.75rem;
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        background: rgba(15, 23, 42, 0.65);
+        color: #f1f5f9;
+        padding: 0.75rem 0.85rem;
+        font-size: 0.85rem;
+        line-height: 1.4;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-notes:focus {
+        outline: none;
+        border-color: rgba(56, 189, 248, 0.45);
+        box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.18);
+      }
+
+      #zepra-survey-agent-panel .survey-agent-chat {
+        display: flex;
+        flex-direction: column;
+        border-radius: 1rem;
+        border: 1px solid rgba(148, 163, 184, 0.14);
+        background: linear-gradient(160deg, rgba(15, 23, 42, 0.72), rgba(12, 20, 34, 0.9));
+        overflow: hidden;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-chat-header {
+        padding: 0.9rem 1.05rem 0.75rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.3rem;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+      }
+
+      #zepra-survey-agent-panel .survey-agent-chat-header h4 {
+        margin: 0;
+        font-size: 0.85rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: #bae6fd;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-chat-status {
+        font-size: 0.76rem;
+        color: #94a3b8;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-chat-body {
+        position: relative;
+        min-height: 160px;
+        max-height: 240px;
+        overflow-y: auto;
+        padding: 1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-chat-body::-webkit-scrollbar {
+        width: 6px;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-chat-body::-webkit-scrollbar-thumb {
+        background: rgba(125, 211, 252, 0.3);
+        border-radius: 999px;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-chat-empty {
+        font-size: 0.82rem;
+        color: #94a3b8;
+        text-align: center;
+        padding: 1rem;
+        border: 1px dashed rgba(148, 163, 184, 0.35);
+        border-radius: 0.9rem;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-chat-thread {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-chat-message {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.35rem;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-chat-message.is-user {
+        align-items: flex-end;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-chat-bubble {
+        padding: 0.65rem 0.8rem;
+        border-radius: 0.9rem;
+        font-size: 0.85rem;
+        line-height: 1.45;
+        max-width: 100%;
+        box-shadow: 0 14px 28px -24px rgba(59, 130, 246, 0.7);
+      }
+
+      #zepra-survey-agent-panel .survey-agent-chat-message.is-user .survey-agent-chat-bubble {
+        background: linear-gradient(135deg, rgba(59, 130, 246, 0.35), rgba(37, 99, 235, 0.45));
+        border: 1px solid rgba(59, 130, 246, 0.4);
+        color: #eff6ff;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-chat-message.is-agent .survey-agent-chat-bubble {
+        background: rgba(15, 23, 42, 0.65);
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        color: #f1f5f9;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-chat-message.is-system .survey-agent-chat-bubble {
+        background: rgba(59, 130, 246, 0.15);
+        border: 1px solid rgba(59, 130, 246, 0.25);
+        color: #cbd5f5;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-chat-message[data-meta="error"] .survey-agent-chat-bubble {
+        border-color: rgba(248, 113, 113, 0.6);
+        background: rgba(239, 68, 68, 0.15);
+        color: #fecaca;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-chat-message[data-meta="plan"] .survey-agent-chat-bubble {
+        border-color: rgba(45, 212, 191, 0.5);
+        background: rgba(15, 118, 110, 0.28);
+        color: #ccfbf1;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-chat-timestamp {
+        font-size: 0.7rem;
+        color: #94a3b8;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-chat-compose {
+        border-top: 1px solid rgba(148, 163, 184, 0.1);
+        padding: 0.85rem 1.05rem;
+        display: flex;
+        gap: 0.65rem;
+        flex-wrap: wrap;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-chat-input {
+        flex: 1;
+        min-height: 68px;
+        max-height: 160px;
+        border-radius: 0.75rem;
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        background: rgba(15, 23, 42, 0.65);
+        color: #f8fafc;
+        padding: 0.75rem 0.85rem;
+        font-size: 0.85rem;
+        line-height: 1.35;
+        resize: vertical;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-chat-input:focus {
+        outline: none;
+        border-color: rgba(56, 189, 248, 0.45);
+        box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.18);
+      }
+
+      #zepra-survey-agent-panel .survey-agent-chat-send {
+        border-radius: 0.75rem;
+        border: 1px solid rgba(59, 130, 246, 0.5);
+        padding: 0.75rem 1rem;
+        background: linear-gradient(135deg, rgba(59, 130, 246, 0.3), rgba(14, 165, 233, 0.4));
+        color: #e0f2fe;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-chat-send:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 16px 32px -20px rgba(59, 130, 246, 0.9);
+      }
+
+      #zepra-survey-agent-panel .survey-agent-chat-send:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+        transform: none;
+        box-shadow: none;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-log {
+        border-radius: 1rem;
+        border: 1px solid rgba(148, 163, 184, 0.14);
+        background: linear-gradient(160deg, rgba(15, 23, 42, 0.72), rgba(12, 20, 34, 0.9));
+        display: flex;
+        flex-direction: column;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-log-header {
+        padding: 0.9rem 1.05rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-log-header h4 {
+        margin: 0;
+        font-size: 0.82rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: #bfdbfe;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-log-actions {
+        display: flex;
+        gap: 0.5rem;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-log-actions button {
+        border: 1px solid rgba(148, 163, 184, 0.4);
+        background: rgba(15, 23, 42, 0.6);
+        color: #e2e8f0;
+        padding: 0.4rem 0.85rem;
+        border-radius: 0.65rem;
+        font-size: 0.75rem;
+        cursor: pointer;
+        transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-log-actions button:hover:not(:disabled) {
+        background: rgba(59, 130, 246, 0.22);
+        border-color: rgba(59, 130, 246, 0.4);
+        color: #fff;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-log-actions button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-log-body {
+        padding: 1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        max-height: 240px;
+        overflow-y: auto;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-log-body::-webkit-scrollbar {
+        width: 6px;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-log-body::-webkit-scrollbar-thumb {
+        background: rgba(94, 234, 212, 0.3);
+        border-radius: 999px;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-log-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-log-empty {
+        font-size: 0.8rem;
+        color: #94a3b8;
+        padding: 1.2rem;
+        text-align: center;
+        border: 1px dashed rgba(148, 163, 184, 0.35);
+        border-radius: 0.9rem;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-log-item {
+        border-radius: 0.85rem;
+        padding: 0.8rem 0.9rem;
+        background: linear-gradient(160deg, rgba(15, 23, 42, 0.88), rgba(17, 24, 39, 0.96));
+        border-left: 3px solid rgba(59, 130, 246, 0.45);
+        box-shadow: 0 18px 32px -28px rgba(56, 189, 248, 0.55);
+      }
+
+      #zepra-survey-agent-panel .survey-agent-log-item.level-plan {
+        border-left-color: rgba(56, 189, 248, 0.6);
+      }
+
+      #zepra-survey-agent-panel .survey-agent-log-item.level-success {
+        border-left-color: rgba(34, 197, 94, 0.65);
+      }
+
+      #zepra-survey-agent-panel .survey-agent-log-item.level-error {
+        border-left-color: rgba(248, 113, 113, 0.7);
+      }
+
+      #zepra-survey-agent-panel .survey-agent-log-item.level-info {
+        border-left-color: rgba(148, 163, 184, 0.55);
+      }
+
+      #zepra-survey-agent-panel .survey-agent-log-item-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 0.72rem;
+        color: rgba(226, 232, 240, 0.8);
+        margin-bottom: 0.35rem;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-log-item-label {
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-log-item-time {
+        font-variant-numeric: tabular-nums;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-log-item-message {
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: #e2e8f0;
+      }
+
+      #zepra-survey-agent-panel .survey-agent-log-item-detail {
+        font-size: 0.75rem;
+        color: #cbd5f5;
+        margin-top: 0.3rem;
+        opacity: 0.8;
+      }
+
+      @media (max-width: 600px) {
+        #zepra-survey-agent-panel {
+          width: 100vw;
+        }
+
+        #zepra-survey-agent-panel .survey-agent-shell-body {
+          padding: 1rem 1.1rem 1.2rem;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+    ui.styleEl = style;
+  }
+
+  function formatTimeShort(ts) {
+    try {
+      return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function renderSurveyAgentChat() {
+    const session = getSurveyAgentSession();
+    const ui = getSurveyAgentUiState();
+    const elements = ui.elements || {};
+    const thread = elements.chatThread;
+    if (!thread) return;
+
+    const chatBody = elements.chatBody;
+    const chatEmpty = elements.chatEmpty;
+    thread.innerHTML = '';
+
+    const chat = Array.isArray(session.chat) ? session.chat : [];
+    if (!chat.length) {
+      thread.style.display = 'none';
+      if (chatEmpty) chatEmpty.style.display = 'block';
+      if (chatBody) chatBody.scrollTop = 0;
+      return;
+    }
+
+    thread.style.display = 'flex';
+    if (chatEmpty) chatEmpty.style.display = 'none';
+
+    chat.forEach((entry) => {
+      if (!entry || typeof entry.text !== 'string') return;
+      const role = entry.role === 'agent' || entry.role === 'system' ? entry.role : 'user';
+      const item = document.createElement('div');
+      item.className = `survey-agent-chat-message is-${role}`;
+      if (entry.meta) {
+        item.dataset.meta = entry.meta;
+      } else {
+        delete item.dataset.meta;
+      }
+      const bubble = document.createElement('div');
+      bubble.className = 'survey-agent-chat-bubble';
+      bubble.textContent = entry.text;
+      item.appendChild(bubble);
+      if (entry.timestamp) {
+        const stamp = document.createElement('div');
+        stamp.className = 'survey-agent-chat-timestamp';
+        stamp.textContent = formatTimeShort(entry.timestamp);
+        item.appendChild(stamp);
+      }
+      thread.appendChild(item);
+    });
+
+    if (chatBody) {
+      chatBody.scrollTop = chatBody.scrollHeight;
+    }
+  }
+
+  function appendSurveyAgentChatMessage(message) {
+    if (!message || typeof message.text !== 'string') return;
+    const text = message.text.trim();
+    if (!text) return;
+    const session = getSurveyAgentSession();
+    if (!Array.isArray(session.chat)) session.chat = [];
+    const entry = {
+      id: message.id || `chat-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      role: message.role === 'agent' || message.role === 'system' ? message.role : 'user',
+      text,
+      timestamp: Number.isFinite(message.timestamp) ? message.timestamp : Date.now(),
+    };
+    if (message.meta) {
+      entry.meta = message.meta;
+    }
+    session.chat.push(entry);
+    if (session.chat.length > SURVEY_AGENT_MAX_CHAT_MESSAGES) {
+      session.chat.splice(0, session.chat.length - SURVEY_AGENT_MAX_CHAT_MESSAGES);
+    }
+    renderSurveyAgentChat();
+  }
+
+  function appendSurveyAgentChatAck(text, meta = 'ack') {
+    const session = getSurveyAgentSession();
+    if (!text) return;
+    const chat = Array.isArray(session.chat) ? session.chat : [];
+    const last = chat[chat.length - 1];
+    if (last && last.role === 'agent' && last.meta === meta && last.text === text) {
+      return;
+    }
+    appendSurveyAgentChatMessage({ role: 'agent', text, meta });
+  }
+
+  function ensureSurveyAgentChatGreeting() {
+    const session = getSurveyAgentSession();
+    if (Array.isArray(session.chat) && session.chat.length) return;
+    appendSurveyAgentChatMessage({
+      role: 'agent',
+      text: 'Ready when you are. Share instructions here and press Start to let me solve the survey.',
+      meta: 'greeting',
+    });
+  }
+
+  function handleSurveyAgentChatSubmit() {
+    const ui = getSurveyAgentUiState();
+    const input = ui.elements && ui.elements.chatInput;
+    if (!input) return;
+    const value = input.value.trim();
+    if (!value) return;
+    sendSurveyAgentUserMessage(value);
+    input.value = '';
+    if (ui.elements && ui.elements.chatSend) {
+      ui.elements.chatSend.disabled = true;
+    }
+    input.focus();
+  }
+
+  function sendSurveyAgentUserMessage(text) {
+    const session = getSurveyAgentSession();
+    appendSurveyAgentChatMessage({ role: 'user', text, meta: 'operator' });
+    appendSurveyAgentLog({ level: 'info', label: 'Operator', message: text });
+    if (session.running) {
+      appendSurveyAgentChatAck('Got it. Adjusting my next steps.', 'ack-running');
+    } else {
+      appendSurveyAgentChatAck('Noted. Start the agent when you\'re ready and I\'ll follow these instructions.', 'ack-idle');
+    }
+  }
+
+  function buildSurveyAgentPlannerConversation(limit = SURVEY_AGENT_CHAT_CONTEXT_LIMIT) {
+    const session = getSurveyAgentSession();
+    const chat = Array.isArray(session.chat) ? session.chat : [];
+    if (!chat.length) return [];
+    const slice = chat.slice(-Math.max(3, limit));
+    return slice
+      .filter((entry) => entry && typeof entry.text === 'string' && entry.text.trim())
+      .map((entry) => ({
+        role: entry.role === 'agent' ? 'agent' : entry.role === 'system' ? 'system' : 'user',
+        text: entry.text.trim(),
+        meta: entry.meta || undefined,
+        timestamp: entry.timestamp || Date.now(),
+      }));
+  }
+
+  function renderSurveyAgentLogs() {
+    const session = getSurveyAgentSession();
+    const ui = getSurveyAgentUiState();
+    const elements = ui.elements || {};
+    if (!elements.logList) return;
+
+    const { logList, logBody, emptyState } = elements;
+    logList.innerHTML = '';
+
+    if (!session.logs.length) {
+      if (emptyState) emptyState.style.display = 'flex';
+      logList.style.display = 'none';
+      if (logBody) logBody.scrollTop = 0;
+      return;
+    }
+
+    logList.style.display = 'flex';
+    if (emptyState) emptyState.style.display = 'none';
+
+    session.logs.forEach((entry) => {
+      const item = document.createElement('div');
+      item.className = `survey-agent-log-item level-${entry.level || 'info'}`;
+
+      const header = document.createElement('div');
+      header.className = 'survey-agent-log-item-header';
+
+      const label = document.createElement('span');
+      label.className = 'survey-agent-log-item-label';
+      label.textContent = entry.label || entry.level || 'info';
+
+      const time = document.createElement('span');
+      time.className = 'survey-agent-log-item-time';
+      time.textContent = formatTimeShort(entry.timestamp);
+
+      header.appendChild(label);
+      header.appendChild(time);
+      item.appendChild(header);
+
+      if (entry.message) {
+        const message = document.createElement('div');
+        message.className = 'survey-agent-log-item-message';
+        message.textContent = entry.message;
+        item.appendChild(message);
+      }
+
+      if (entry.detail) {
+        const detail = document.createElement('div');
+        detail.className = 'survey-agent-log-item-detail';
+        detail.textContent = entry.detail;
+        item.appendChild(detail);
+      }
+
+      logList.appendChild(item);
+    });
+
+    if (logBody) {
+      logBody.scrollTop = logBody.scrollHeight;
+    }
+  }
+
+  function surveyAgentStatusDescriptor(session) {
+    if (session.running && session.stopRequested) {
+      return { label: 'Stopping…', dot: 'warning' };
+    }
+    if (session.running && session.status === 'planning') {
+      return { label: 'Planning next step', dot: 'running' };
+    }
+    if (session.running && session.status === 'executing') {
+      return { label: 'Executing action', dot: 'running' };
+    }
+    if (session.running) {
+      return { label: 'Running', dot: 'running' };
+    }
+    switch (session.status) {
+      case 'done':
+        return { label: 'Completed', dot: 'success' };
+      case 'aborted':
+        return { label: 'Aborted', dot: 'warning' };
+      case 'error':
+        return { label: 'Error', dot: 'error' };
+      case 'stopped':
+        return { label: 'Stopped', dot: 'warning' };
+      default:
+        return { label: 'Idle', dot: 'idle' };
+    }
+  }
+
+  function updateSurveyAgentUiState() {
+    const session = getSurveyAgentSession();
+    const ui = getSurveyAgentUiState();
+    const elements = ui.elements;
+    if (!elements) return;
+
+    const descriptor = surveyAgentStatusDescriptor(session);
+    if (elements.statusText) {
+      elements.statusText.textContent = descriptor.label;
+    }
+
+    if (elements.statusDot) {
+      elements.statusDot.classList.remove('is-running', 'is-success', 'is-warning', 'is-error', 'is-idle');
+      const dotClass =
+        descriptor.dot === 'running'
+          ? 'is-running'
+          : descriptor.dot === 'success'
+          ? 'is-success'
+          : descriptor.dot === 'warning'
+          ? 'is-warning'
+          : descriptor.dot === 'error'
+          ? 'is-error'
+          : 'is-idle';
+      elements.statusDot.classList.add(dotClass);
+    }
+
+    if (elements.statusMeta) {
+      const steps = session.history.length;
+      const plans = session.planCount;
+      const parts = [];
+      parts.push(steps === 1 ? '1 step' : `${steps} steps`);
+      parts.push(plans === 1 ? '1 plan' : `${plans} plans`);
+      elements.statusMeta.textContent = parts.join(' • ');
+    }
+
+    if (elements.startBtn) {
+      elements.startBtn.disabled = session.running;
+    }
+    if (elements.stopBtn) {
+      elements.stopBtn.disabled = !session.running;
+    }
+    if (elements.clearBtn) {
+      elements.clearBtn.disabled = !session.logs.length || session.running;
+    }
+    if (elements.copyBtn) {
+      elements.copyBtn.disabled = !session.logs.length;
+    }
+    if (elements.chatSend) {
+      const chatValue = elements.chatInput ? elements.chatInput.value.trim() : '';
+      elements.chatSend.disabled = !chatValue;
+    }
+    if (elements.chatStatus) {
+      if (session.running && session.stopRequested) {
+        elements.chatStatus.textContent = 'Stopping after the current step…';
+      } else if (session.running) {
+        elements.chatStatus.textContent = 'Live: agent is acting on your instructions.';
+      } else {
+        elements.chatStatus.textContent = 'Idle: send a command or press Start.';
+      }
+    }
+    if (elements.notesInput && !session.running && document.activeElement !== elements.notesInput) {
+      elements.notesInput.value = session.instructions || '';
+    }
+
+    renderSurveyAgentLogs();
+    renderSurveyAgentChat();
+  }
+
+  function truncateForLog(str, max = 72) {
+    if (!str) return '';
+    const value = String(str);
+    return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
+  }
+
+  function appendSurveyAgentLog(entry) {
+    const session = getSurveyAgentSession();
+    const logEntry = {
+      id: entry.id || `log-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      level: entry.level || 'info',
+      label: entry.label || '',
+      message: entry.message || '',
+      detail: entry.detail || '',
+      timestamp: entry.timestamp || Date.now(),
+    };
+    session.logs.push(logEntry);
+    if (session.logs.length > SURVEY_AGENT_MAX_LOGS) {
+      session.logs.splice(0, session.logs.length - SURVEY_AGENT_MAX_LOGS);
+    }
+    updateSurveyAgentUiState();
+  }
+
+  function formatSurveyAgentAction(step) {
+    if (!step || typeof step !== 'object') return '';
+    const type = String(step.type || '').toLowerCase();
+    const hi = step.locator && Number.isInteger(step.locator.highlightIndex) ? `#${step.locator.highlightIndex}` : '';
+    if (type === 'click') {
+      return hi ? `Click element ${hi}` : 'Click element';
+    }
+    if (type === 'type') {
+      const text = truncateForLog(step.text || step.value || '');
+      return hi ? `Type "${text}" into ${hi}` : `Type "${text}"`;
+    }
+    if (type === 'select') {
+      const text = truncateForLog(step.text || step.option || '');
+      return hi ? `Select "${text}" on ${hi}` : `Select option "${text}"`;
+    }
+    if (type === 'scroll') {
+      if (step.mode === 'percent') {
+        return `Scroll to ${step.percent ?? 0}%`;
+      }
+      if (step.mode === 'top') return 'Scroll to top';
+      if (step.mode === 'bottom') return 'Scroll to bottom';
+      return hi ? `Scroll element ${hi} into view` : 'Scroll page';
+    }
+    if (type === 'navigate') {
+      const url = truncateForLog(step.url || '');
+      return `Navigate to ${url || 'target URL'}`;
+    }
+    if (type === 'back') return 'Go back';
+    if (type === 'forward') return 'Go forward';
+    if (type === 'reload') return 'Reload page';
+    if (type === 'wait') {
+      const ms = Number.isFinite(step.ms) ? step.ms : Number(step.duration) || 0;
+      return `Wait ${Math.max(0, Math.round(ms))} ms`;
+    }
+    return type ? `${type} action` : 'Action';
+  }
+
+  function formatSurveyAgentResult(result) {
+    if (!result || typeof result !== 'object') return '';
+    const details = result.details || {};
+    if (details.text) return `Value "${truncateForLog(details.text)}"`;
+    if (details.value) return `Value "${truncateForLog(details.value)}"`;
+    if (details.percent !== undefined) return `Scrolled to ${details.percent}%`;
+    if (details.position) return `Position ${details.position}`;
+    if (details.url) return truncateForLog(details.url);
+    if (details.index !== undefined) return `Index ${details.index}`;
+    if (result.code) return result.code;
+    return '';
+  }
+
+  function inferQuestionFromLocator(locator = {}) {
+    try {
+      const resolved = resolveSurveyAgentElement(locator);
+      if (resolved && resolved.element) {
+        return getElementLabelText(resolved.element) || extractElementText(resolved.element);
+      }
+    } catch (err) {
+      // ignore resolution errors
+    }
+    return '';
+  }
+
+  function buildSurveyAgentHistoryRecord(session, status) {
+    if (!session || typeof session !== 'object') return null;
+    const answers = [];
+    for (const entry of Array.isArray(session.history) ? session.history : []) {
+      const step = entry?.step || entry?.action || {};
+      const result = entry?.result || entry || {};
+      const type = String(step.type || '').toLowerCase();
+      if (type !== 'type' && type !== 'select') continue;
+      const locator = step.locator || {};
+      const details = result.details || {};
+      const answerText = type === 'select'
+        ? details.text || details.value || step.text || ''
+        : details.text || step.text || '';
+      if (!answerText) continue;
+      const question = details.question || inferQuestionFromLocator(locator);
+      answers.push({
+        type,
+        highlightIndex: Number.isInteger(locator.highlightIndex) ? locator.highlightIndex : null,
+        identityKey: details.identityKey || null,
+        question: question || '',
+        answer: answerText,
+      });
+    }
+    if (!answers.length) return null;
+
+    const logs = (session.logs || []).map((entry) => ({
+      level: entry.level,
+      label: entry.label,
+      message: entry.message,
+      detail: entry.detail,
+      timestamp: entry.timestamp,
+    }));
+    const chat = (session.chat || [])
+      .filter((entry) => entry && typeof entry.text === 'string' && entry.text.trim())
+      .map((entry) => ({
+        role: entry.role === 'agent' || entry.role === 'system' ? entry.role : 'user',
+        text: entry.text.trim(),
+        timestamp: entry.timestamp,
+        meta: entry.meta,
+      }));
+    return {
+      id: `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      url: location.href,
+      title: document.title,
+      startedAt: session.startedAt || Date.now(),
+      completedAt: session.completedAt || Date.now(),
+      status,
+      goal: session.goal || '',
+      instructions: session.instructions || '',
+      answers,
+      logs: logs.slice(-80),
+      chat: chat.slice(-SURVEY_AGENT_MAX_CHAT_MESSAGES),
+    };
+  }
+
+  async function persistSurveyAgentHistory(session, status) {
+    const record = buildSurveyAgentHistoryRecord(session, status);
+    if (!record) return;
+    try {
+      await chrome.runtime.sendMessage({ type: 'SURVEY_AGENT_SAVE_HISTORY', record });
+    } catch (err) {
+      console.warn('Survey agent history save failed', err);
+    }
+  }
+
+  function finalizeSurveyAgentSession(session, status, message) {
+    session.running = false;
+    session.stopRequested = false;
+    session.status = status;
+    session.completedAt = Date.now();
+    session.loopPromise = null;
+    if (message) {
+      appendSurveyAgentLog({
+        level: status === 'done' ? 'success' : status === 'error' ? 'error' : 'info',
+        label: 'Agent',
+        message,
+      });
+    } else {
+      updateSurveyAgentUiState();
+    }
+    const summaryMessage =
+      message ||
+      (status === 'done'
+        ? 'Survey complete.'
+        : status === 'aborted'
+        ? 'Run aborted.'
+        : status === 'error'
+        ? 'Run stopped because of an error.'
+        : status === 'stopped'
+        ? 'Run stopped by request.'
+        : 'Agent is idle.');
+    if (summaryMessage) {
+      appendSurveyAgentChatMessage({ role: 'agent', text: summaryMessage, meta: 'status' });
+    }
+    if (status === 'done') {
+      const payload = {
+        history: Array.isArray(session.history) ? [...session.history] : [],
+        logs: Array.isArray(session.logs) ? [...session.logs] : [],
+        goal: session.goal,
+        instructions: session.instructions,
+        startedAt: session.startedAt,
+        completedAt: session.completedAt,
+        chat: Array.isArray(session.chat) ? [...session.chat] : [],
+      };
+      persistSurveyAgentHistory(payload, status).catch((err) => console.warn('Survey agent history persist failed', err));
+    }
+  }
+
+  function openSurveyAgentPanel() {
+    ensureSurveyAgentStyles();
+    const ui = getSurveyAgentUiState();
+    if (ui.modal && ui.modal.isConnected && !ui.modal.classList.contains('is-closing')) {
+      updateSurveyAgentUiState();
+      return ui.modal;
+    }
+
+    const session = getSurveyAgentSession();
+    if (!session.goal) session.goal = SURVEY_AGENT_DEFAULT_GOAL;
+
+    const panelHtml = `
+      <div class="survey-agent-panel">
+        <section class="survey-agent-status">
+          <div class="survey-agent-status-left">
+            <span class="survey-agent-status-dot is-idle"></span>
+            <div>
+              <div class="survey-agent-status-text">Idle</div>
+              <div class="survey-agent-status-meta">No steps yet</div>
+            </div>
+          </div>
+        </section>
+        <section class="survey-agent-controls">
+          <button type="button" class="survey-agent-btn start">Start</button>
+          <button type="button" class="survey-agent-btn stop" disabled>Stop</button>
+        </section>
+        <section class="survey-agent-notes-wrap">
+          <label>Operator note (optional)</label>
+          <textarea class="survey-agent-notes" placeholder="Add hints or constraints for the agent"></textarea>
+        </section>
+        <section class="survey-agent-chat">
+          <header class="survey-agent-chat-header">
+            <h4>Chat</h4>
+            <span class="survey-agent-chat-status">Give the agent commands or clarifications as you go.</span>
+          </header>
+          <div class="survey-agent-chat-body">
+            <div class="survey-agent-chat-empty">Use the chat to tell the agent what to do or ask for updates.</div>
+            <div class="survey-agent-chat-thread"></div>
+          </div>
+          <form class="survey-agent-chat-compose">
+            <textarea class="survey-agent-chat-input" rows="2" placeholder="Type a command or question…"></textarea>
+            <button type="submit" class="survey-agent-chat-send">Send</button>
+          </form>
+        </section>
+        <section class="survey-agent-log">
+          <header class="survey-agent-log-header">
+            <h4>Run log</h4>
+            <div class="survey-agent-log-actions">
+              <button type="button" class="survey-agent-copy" disabled>Copy</button>
+              <button type="button" class="survey-agent-clear" disabled>Clear</button>
+            </div>
+          </header>
+          <div class="survey-agent-log-body">
+            <div class="survey-agent-log-empty">The agent will record each plan and action here once you start a run.</div>
+            <div class="survey-agent-log-list"></div>
+          </div>
+        </section>
+      </div>
+    `;
+
+    const panel = createSurveyAgentPanel('Survey Agent', panelHtml, () => {
+      const currentUi = getSurveyAgentUiState();
+      if (currentUi.modal === panel) {
+        currentUi.modal = null;
+        currentUi.elements = null;
+      }
+    });
+
+    ui.modal = panel;
+    ui.elements = {
+      statusDot: panel.querySelector('.survey-agent-status-dot'),
+      statusText: panel.querySelector('.survey-agent-status-text'),
+      statusMeta: panel.querySelector('.survey-agent-status-meta'),
+      startBtn: panel.querySelector('.survey-agent-btn.start'),
+      stopBtn: panel.querySelector('.survey-agent-btn.stop'),
+      notesInput: panel.querySelector('.survey-agent-notes'),
+      copyBtn: panel.querySelector('.survey-agent-copy'),
+      clearBtn: panel.querySelector('.survey-agent-clear'),
+      logList: panel.querySelector('.survey-agent-log-list'),
+      logBody: panel.querySelector('.survey-agent-log-body'),
+      emptyState: panel.querySelector('.survey-agent-log-empty'),
+      chatBody: panel.querySelector('.survey-agent-chat-body'),
+      chatThread: panel.querySelector('.survey-agent-chat-thread'),
+      chatEmpty: panel.querySelector('.survey-agent-chat-empty'),
+      chatInput: panel.querySelector('.survey-agent-chat-input'),
+      chatSend: panel.querySelector('.survey-agent-chat-send'),
+      chatForm: panel.querySelector('.survey-agent-chat-compose'),
+      chatStatus: panel.querySelector('.survey-agent-chat-status'),
+    };
+
+    if (ui.elements.startBtn) {
+      ui.elements.startBtn.addEventListener('click', () => {
+        const instructions = ui.elements.notesInput ? ui.elements.notesInput.value.trim() : '';
+        startSurveyAgentRun({ instructions });
+      });
+    }
+
+    if (ui.elements.stopBtn) {
+      ui.elements.stopBtn.addEventListener('click', () => stopSurveyAgentRun());
+    }
+
+    if (ui.elements.clearBtn) {
+      ui.elements.clearBtn.addEventListener('click', () => {
+        const sessionState = getSurveyAgentSession();
+        sessionState.logs = [];
+        renderSurveyAgentLogs();
+        updateSurveyAgentUiState();
+      });
+    }
+
+    if (ui.elements.copyBtn) {
+      ui.elements.copyBtn.addEventListener('click', async () => {
+        const sessionState = getSurveyAgentSession();
+        if (!sessionState.logs.length) return;
+        const text = sessionState.logs
+          .map((entry) => {
+            const time = new Date(entry.timestamp).toISOString();
+            const label = entry.label || entry.level || 'log';
+            const msg = entry.message || '';
+            const detail = entry.detail ? ` | ${entry.detail}` : '';
+            return `[${time}] ${label}: ${msg}${detail}`;
+          })
+          .join('\n');
+        try {
+          await navigator.clipboard.writeText(text);
+          showNotification('Survey agent log copied');
+        } catch (err) {
+          showNotification('Failed to copy log');
+        }
+      });
+    }
+
+    if (ui.elements.notesInput) {
+      ui.elements.notesInput.value = session.instructions || '';
+      ui.elements.notesInput.addEventListener('input', (event) => {
+        session.instructions = event.target.value;
+      });
+    }
+
+    if (ui.elements.chatForm) {
+      ui.elements.chatForm.addEventListener('submit', (event) => {
+        event.preventDefault();
+        handleSurveyAgentChatSubmit();
+      });
+    }
+
+    if (ui.elements.chatSend) {
+      ui.elements.chatSend.addEventListener('click', (event) => {
+        event.preventDefault();
+        handleSurveyAgentChatSubmit();
+      });
+    }
+
+    if (ui.elements.chatInput) {
+      ui.elements.chatInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' && !event.shiftKey && !event.altKey) {
+          event.preventDefault();
+          handleSurveyAgentChatSubmit();
+        }
+      });
+      ui.elements.chatInput.addEventListener('input', () => {
+        if (ui.elements.chatSend) {
+          ui.elements.chatSend.disabled = !ui.elements.chatInput.value.trim();
+        }
+      });
+    }
+
+    ensureSurveyAgentChatGreeting();
+    if (ui.elements.chatSend) {
+      ui.elements.chatSend.disabled = !ui.elements.chatInput || !ui.elements.chatInput.value.trim();
+    }
+
+    updateSurveyAgentUiState();
+    return panel;
+  }
+
+  function startSurveyAgentRun(options = {}) {
+    const session = getSurveyAgentSession();
+    if (session.running) {
+      showNotification('Survey agent is already running');
+      return;
+    }
+    session.history = [];
+    session.planCount = 0;
+    session.errorCount = 0;
+    session.startedAt = Date.now();
+    session.completedAt = 0;
+    session.stopRequested = false;
+    session.status = 'running';
+    session.goal = SURVEY_AGENT_DEFAULT_GOAL;
+    if (typeof options.instructions === 'string') {
+      session.instructions = options.instructions;
+    }
+    appendSurveyAgentLog({ level: 'info', label: 'Agent', message: 'Starting new run' });
+    appendSurveyAgentChatMessage({
+      role: 'agent',
+      text: 'On it! I\'ll start working through the survey.',
+      meta: 'status',
+    });
+    session.running = true;
+    updateSurveyAgentUiState();
+
+    session.loopPromise = runSurveyAgentLoop(session).finally(() => {
+      session.loopPromise = null;
+      updateSurveyAgentUiState();
+    });
+  }
+
+  function stopSurveyAgentRun(reason = 'Stop requested by user') {
+    const session = getSurveyAgentSession();
+    if (!session.running || session.stopRequested) return;
+    session.stopRequested = true;
+    session.status = 'stopping';
+    appendSurveyAgentLog({ level: 'info', label: 'Agent', message: reason });
+    appendSurveyAgentChatMessage({
+      role: 'agent',
+      text: 'Okay, stopping after the current step.',
+      meta: 'status',
+    });
+  }
+
+  async function runSurveyAgentLoop(session) {
+    try {
+      while (session.running && !session.stopRequested) {
+        if (session.history.length >= session.maxSteps) {
+          finalizeSurveyAgentSession(session, 'aborted', 'Reached step limit.');
+          return;
+        }
+
+        session.status = 'planning';
+        updateSurveyAgentUiState();
+
+        let domTree;
+        try {
+          domTree = await collectSurveyDomTree({ showHighlights: false });
+        } catch (err) {
+          finalizeSurveyAgentSession(session, 'error', `Failed to read page: ${err?.message || err}`);
+          return;
+        }
+
+        if (session.stopRequested) {
+          break;
+        }
+
+        let planResponse;
+        try {
+          planResponse = await chrome.runtime.sendMessage({
+            type: 'SURVEY_AGENT_PLAN_NEXT',
+            domTree,
+            history: session.history,
+            goal: session.goal,
+            instructions: session.instructions ? session.instructions : undefined,
+            context: buildSurveyAgentPlanningContext(),
+            conversation: buildSurveyAgentPlannerConversation(),
+          });
+        } catch (err) {
+          planResponse = { ok: false, error: err?.message || String(err) };
+        }
+
+        if (session.stopRequested) {
+          break;
+        }
+
+        if (!planResponse || !planResponse.ok) {
+          session.errorCount += 1;
+          appendSurveyAgentLog({
+            level: 'error',
+            label: `Plan ${session.planCount + 1}`,
+            message: 'Planner error',
+            detail: planResponse?.error || 'Unknown planner failure',
+          });
+          appendSurveyAgentChatMessage({
+            role: 'agent',
+            text: `I couldn't plan the next step: ${planResponse?.error || 'Unknown planner failure'}. Retrying…`,
+            meta: 'error',
+          });
+          if (session.errorCount >= SURVEY_AGENT_MAX_PLAN_ERRORS) {
+            finalizeSurveyAgentSession(session, 'error', 'Planner repeatedly failed.');
+            return;
+          }
+          await sleep(600);
+          continue;
+        }
+
+        session.errorCount = 0;
+        session.planCount += 1;
+
+        const plan = planResponse;
+        const planMessage = formatSurveyAgentAction(plan.step) || 'No actionable step';
+        const planDetails = [];
+        if (plan.explanation) planDetails.push(plan.explanation.trim());
+        if (typeof plan.confidence === 'number' && !Number.isNaN(plan.confidence)) {
+          planDetails.push(`Confidence ${(plan.confidence * 100).toFixed(0)}%`);
+        }
+        appendSurveyAgentLog({
+          level: 'plan',
+          label: `Plan ${session.planCount}`,
+          message: planMessage,
+          detail: planDetails.join(' • '),
+        });
+
+        if (plan.explanation) {
+          appendSurveyAgentChatMessage({
+            role: 'agent',
+            text: plan.explanation.trim(),
+            meta: plan.status === 'continue' ? 'plan' : 'status',
+          });
+        }
+
+        if (plan.status === 'done') {
+          finalizeSurveyAgentSession(session, 'done', plan.explanation || 'Survey complete.');
+          return;
+        }
+        if (plan.status === 'abort') {
+          finalizeSurveyAgentSession(session, 'aborted', plan.explanation || 'Planner aborted the run.');
+          return;
+        }
+
+        if (!plan.step) {
+          session.errorCount += 1;
+          appendSurveyAgentLog({
+            level: 'error',
+            label: `Plan ${session.planCount}`,
+            message: 'Planner returned no step.',
+          });
+          appendSurveyAgentChatMessage({
+            role: 'agent',
+            text: 'I did not get a clear next action. Let me rescan and try again.',
+            meta: 'plan',
+          });
+          if (session.errorCount >= SURVEY_AGENT_MAX_PLAN_ERRORS) {
+            finalizeSurveyAgentSession(session, 'error', 'Planner repeatedly returned empty steps.');
+            return;
+          }
+          await sleep(400);
+          continue;
+        }
+
+        session.status = 'executing';
+        updateSurveyAgentUiState();
+
+        let actionResult;
+        if (plan.step.type === 'wait') {
+          const waitMs = Number.isFinite(plan.step.ms)
+            ? Math.max(0, plan.step.ms)
+            : Math.max(0, Number(plan.step.duration) || 0);
+          appendSurveyAgentLog({ level: 'info', label: 'Wait', message: `Waiting ${Math.round(waitMs)} ms` });
+          await sleep(waitMs);
+          actionResult = { ok: true, code: 'act_wait_ok', details: { ms: waitMs }, status: 'ok' };
+        } else {
+          try {
+            actionResult = await executeSurveyAgentAction(plan.step);
+          } catch (err) {
+            actionResult = { ok: false, error: err?.message || String(err), code: err?.code };
+          }
+        }
+
+        const normalizedResult = {
+          ok: Boolean(actionResult?.ok),
+          code: actionResult?.code || (actionResult?.ok ? 'act_unknown_ok' : 'act_unknown_fail'),
+          details: actionResult?.details || {},
+          error: actionResult?.error,
+          status: actionResult?.status || (actionResult?.ok === false ? 'fail' : 'ok'),
+        };
+
+        const executedStep = plan.step ? { ...plan.step } : null;
+        if (executedStep && normalizedResult.details && typeof normalizedResult.details.text === 'string') {
+          if (executedStep.type === 'type' || executedStep.type === 'select') {
+            executedStep.text = normalizedResult.details.text;
+          }
+        }
+        session.history.push({ step: executedStep || plan.step, result: normalizedResult });
+        if (session.history.length > SURVEY_AGENT_HISTORY_LIMIT) {
+          session.history = session.history.slice(-SURVEY_AGENT_HISTORY_LIMIT);
+        }
+
+        appendSurveyAgentLog({
+          level: normalizedResult.ok ? 'success' : 'error',
+          label: normalizedResult.ok ? 'Action' : 'Action failed',
+          message: formatSurveyAgentAction(plan.step),
+          detail: normalizedResult.ok ? formatSurveyAgentResult(normalizedResult) : (normalizedResult.error || normalizedResult.code),
+        });
+
+        if (!normalizedResult.ok) {
+          const failureDetail = normalizedResult.error || normalizedResult.code || 'Action failed';
+          appendSurveyAgentChatMessage({
+            role: 'agent',
+            text: `Action failed: ${failureDetail}. I'll adjust and try again.`,
+            meta: 'error',
+          });
+        }
+
+        session.status = 'running';
+        updateSurveyAgentUiState();
+
+        await sleep(normalizedResult.ok ? 120 : 400);
+      }
+
+      if (session.stopRequested) {
+        finalizeSurveyAgentSession(session, 'stopped', 'Run stopped by user.');
+      } else if (session.running) {
+        finalizeSurveyAgentSession(session, 'done');
+      }
+    } catch (err) {
+      finalizeSurveyAgentSession(session, 'error', `Agent error: ${err?.message || err}`);
+    }
+  }
+
+  function evaluateXPathInDocument(xpath, doc) {
+    if (!xpath || !doc) return null;
+    const trimmed = String(xpath).trim();
+    if (!trimmed) return null;
+    const attempts = [];
+    if (trimmed.startsWith('/') || trimmed.startsWith('.')) {
+      attempts.push(trimmed);
+    } else {
+      attempts.push(`//${trimmed}`);
+      attempts.push(`/${trimmed}`);
+    }
+    for (const attempt of attempts) {
+      try {
+        const result = doc.evaluate(attempt, doc, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+        if (result && result.singleNodeValue) {
+          return result.singleNodeValue;
+        }
+      } catch (e) {
+        // ignore evaluation errors
+      }
+    }
+    return null;
+  }
+
+  function resolveSurveyAgentElement(locator = {}) {
+    const resolved = {
+      element: null,
+      frameElements: [],
+      frameChain: [],
+      highlightEntry: null,
+      reason: null,
+      doc: document,
+    };
+
+    const highlightIndex = Number.isInteger(locator.highlightIndex) ? locator.highlightIndex : null;
+    const state = STATE.surveyAgent;
+    let highlightEntry = null;
+    if (highlightIndex !== null && state.highlightLookup instanceof Map) {
+      highlightEntry = state.highlightLookup.get(highlightIndex) || null;
+    }
+    if (!highlightEntry && locator.nodeId && state.nodeById instanceof Map) {
+      const node = state.nodeById.get(String(locator.nodeId));
+      if (node && Number.isInteger(node.highlightIndex)) {
+        highlightEntry = state.highlightLookup.get(node.highlightIndex) || null;
+      }
+    }
+
+    const frameChain = Array.isArray(locator.frameChain)
+      ? locator.frameChain
+      : highlightEntry?.frameChain || [];
+
+    let doc = document;
+    const frameElements = [];
+    for (const frame of frameChain) {
+      const frameXPath = frame?.xpath || frame?.frameXPath || '';
+      const frameCss = frame?.css || '';
+      const frameElement =
+        (frameXPath ? evaluateXPathInDocument(frameXPath, doc) : null) ||
+        (frameCss ? doc.querySelector(frameCss) : null);
+      if (!frameElement) {
+        resolved.reason = 'IFRAME_NOT_FOUND';
+        return resolved;
+      }
+      if (!(frameElement instanceof HTMLIFrameElement)) {
+        resolved.reason = 'FRAME_NOT_IFRAME';
+        return resolved;
+      }
+      const frameDoc = frameElement.contentDocument;
+      if (!frameDoc) {
+        resolved.reason = 'CROSS_ORIGIN_IFRAME';
+        return resolved;
+      }
+      frameElements.push(frameElement);
+      doc = frameDoc;
+    }
+
+    const targetXPath = locator.xpath || highlightEntry?.xpath || '';
+    let element = targetXPath ? evaluateXPathInDocument(targetXPath, doc) : null;
+    if (!element && locator.css) {
+      element = doc.querySelector(locator.css);
+    }
+    if (!element && locator.text) {
+      const normalized = String(locator.text).trim().toLowerCase();
+      if (normalized) {
+        const candidates = Array.from(
+          doc.querySelectorAll(
+            'button, a, input, textarea, select, label, [role="button"], [role="option"], [role="menuitem"], [data-action]'
+          )
+        );
+        element = candidates.find((node) => (node.textContent || node.value || '').trim().toLowerCase() === normalized) || null;
+      }
+    }
+
+    resolved.element = element || null;
+    resolved.frameElements = frameElements;
+    resolved.frameChain = frameChain;
+    resolved.highlightEntry = highlightEntry;
+    resolved.doc = doc;
+
+    if (!resolved.element) {
+      resolved.reason = resolved.reason || 'ELEMENT_NOT_FOUND';
+    }
+
+    return resolved;
+  }
+
+  function focusFrameElements(frameElements) {
+    if (!Array.isArray(frameElements) || frameElements.length === 0) return;
+    const lastFrame = frameElements[frameElements.length - 1];
+    try {
+      lastFrame?.focus?.();
+    } catch (e) {
+      // ignore focus errors
+    }
+  }
+
+  function ensureElementInView(element, behavior = 'instant') {
+    if (!element) return;
+    try {
+      element.scrollIntoView({ block: 'center', inline: 'center', behavior });
+    } catch (e) {
+      try {
+        element.scrollIntoView();
+      } catch (err) {
+        // ignore scroll errors
+      }
+    }
+  }
+
+  function simulateElementClick(element, options = {}) {
+    if (!element) throw new Error('ELEMENT_UNDEFINED');
+    const doc = element.ownerDocument || document;
+    const win = doc.defaultView || window;
+    if (options.scrollIntoView !== false) {
+      ensureElementInView(element, options.scrollBehavior === 'smooth' ? 'smooth' : 'instant');
+    }
+    if (typeof element.focus === 'function') {
+      try {
+        element.focus({ preventScroll: options.scrollIntoView === false });
+      } catch (e) {
+        element.focus();
+      }
+    }
+    const rect = element.getBoundingClientRect();
+    const clientX = rect.left + Math.max(1, rect.width / 2);
+    const clientY = rect.top + Math.max(1, rect.height / 2);
+    const eventInit = {
+      bubbles: true,
+      cancelable: true,
+      view: win,
+      clientX,
+      clientY,
+      screenX: (win?.screenX || 0) + clientX,
+      screenY: (win?.screenY || 0) + clientY,
+      button: 0,
+    };
+    const PointerCtor = win.PointerEvent || win.MouseEvent || MouseEvent;
+    const MouseCtor = win.MouseEvent || MouseEvent;
+    const sequence = [
+      ['pointerover', PointerCtor],
+      ['mouseover', MouseCtor],
+      ['pointerdown', PointerCtor],
+      ['mousedown', MouseCtor],
+      ['pointerup', PointerCtor],
+      ['mouseup', MouseCtor],
+      ['click', MouseCtor],
+    ];
+    for (const [type, Ctor] of sequence) {
+      try {
+        const event = new Ctor(type, eventInit);
+        element.dispatchEvent(event);
+      } catch (e) {
+        // ignore dispatch failures
+      }
+    }
+  }
+
+  function extractElementText(element) {
+    if (!element) return '';
+    if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') {
+      return (element.value || element.placeholder || '').trim();
+    }
+    return (element.innerText || element.textContent || '').trim().replace(/\s+/g, ' ');
+  }
+
+  async function typeValueIntoElement(element, text, options = {}) {
+    if (!element) throw new Error('ELEMENT_UNDEFINED');
+    const speed = options.typingSpeed || options.speed || 'normal';
+    const delays = speed === 'fast' ? [5, 15] : speed === 'slow' ? [60, 120] : [25, 60];
+    const isInput = (node) => node && (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA');
+    const isContentEditable = (node) => node && node.isContentEditable;
+    const dispatch = (node, type) => node && node.dispatchEvent(new Event(type, { bubbles: true }));
+    const setter = isInput(element)
+      ? (value) => {
+          const proto = element.tagName === 'INPUT' ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
+          const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+          if (desc && desc.set) desc.set.call(element, value);
+          else element.value = value;
+        }
+      : isContentEditable(element)
+      ? (value) => {
+          element.innerHTML = '';
+          element.textContent = value;
+        }
+      : (value) => {
+          element.textContent = value;
+        };
+    const getter = isInput(element)
+      ? () => element.value
+      : () => element.value ?? element.textContent ?? '';
+
+    if (typeof element.focus === 'function') {
+      try {
+        element.focus({ preventScroll: true });
+      } catch (e) {
+        element.focus();
+      }
+    }
+
+    if (options.replace !== false) {
+      const currentValue = getter();
+      if (currentValue) {
+        setter('');
+        dispatch(element, 'input');
+      }
+    }
+
+    const valueToType = text == null ? '' : String(text);
+    if (!valueToType) {
+      dispatch(element, 'change');
+      return;
+    }
+
+    let current = getter() || '';
+    for (const ch of valueToType) {
+      dispatch(element, 'keydown');
+      setter(current + ch);
+      current += ch;
+      dispatch(element, 'input');
+      dispatch(element, 'keyup');
+      await sleep(rand(delays[0], delays[1]));
+    }
+    dispatch(element, 'change');
+  }
+
+  function selectOptionOnElement(element, text) {
+    if (!element || element.tagName !== 'SELECT') {
+      throw new Error('NOT_SELECT_ELEMENT');
+    }
+    const options = Array.from(element.options || []);
+    if (!options.length) {
+      return { selected: false };
+    }
+    const normalized = String(text || '').trim().toLowerCase();
+    let match = options.find((opt) => opt.textContent?.trim().toLowerCase() === normalized);
+    if (!match) {
+      match = options.find((opt) => opt.value?.trim().toLowerCase() === normalized);
+    }
+    if (!match && normalized) {
+      match = options.find((opt) => opt.textContent?.trim().toLowerCase().includes(normalized));
+    }
+    if (!match && normalized) {
+      match = options.find((opt) => normalized.includes(opt.textContent?.trim().toLowerCase() || ''));
+    }
+    if (!match) {
+      return { selected: false };
+    }
+    element.value = match.value;
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+    return {
+      selected: true,
+      value: match.value,
+      text: match.textContent?.trim() || match.value,
+    };
+  }
+
+  function performScrollAction(action = {}, resolved) {
+    const mode = action.mode || 'element';
+    const targetDoc = resolved?.doc || document;
+    const targetWin = targetDoc.defaultView || window;
+    const behavior = action.behavior === 'smooth' ? 'smooth' : 'instant';
+
+    if (mode === 'element') {
+      if (!resolved || !resolved.element) {
+        throw new Error('ELEMENT_NOT_FOUND');
+      }
+      ensureElementInView(resolved.element, behavior);
+      return { target: extractElementText(resolved.element) };
+    }
+
+    if (mode === 'percent') {
+      const percent = Number(action.percent);
+      if (!Number.isFinite(percent)) {
+        throw new Error('INVALID_PERCENT');
+      }
+      const docEl = targetDoc.documentElement || targetDoc.body;
+      const totalHeight = (docEl?.scrollHeight || 0) - (targetWin.innerHeight || 0);
+      const clampedPercent = Math.max(0, Math.min(100, percent));
+      const y = totalHeight <= 0 ? 0 : Math.round((clampedPercent / 100) * totalHeight);
+      targetWin.scrollTo({ top: y, behavior });
+      return { percent: clampedPercent };
+    }
+
+    if (mode === 'top') {
+      targetWin.scrollTo({ top: 0, behavior });
+      return { position: 'top' };
+    }
+
+    if (mode === 'bottom') {
+      const docEl = targetDoc.documentElement || targetDoc.body;
+      const totalHeight = (docEl?.scrollHeight || 0) - (targetWin.innerHeight || 0);
+      targetWin.scrollTo({ top: Math.max(0, totalHeight), behavior });
+      return { position: 'bottom' };
+    }
+
+    throw new Error('UNKNOWN_SCROLL_MODE');
+  }
+
+  function getElementLabelText(element) {
+    if (!element) return '';
+    const doc = element.ownerDocument || document;
+    let label = '';
+    if (element.labels && element.labels.length) {
+      label = Array.from(element.labels)
+        .map((el) => (el?.textContent || '').trim())
+        .filter(Boolean)
+        .join(' ');
+    }
+    if (!label && element.id) {
+      try {
+        const selector = `label[for="${typeof CSS !== 'undefined' ? CSS.escape(element.id) : element.id}"]`;
+        const forLabel = doc.querySelector(selector);
+        if (forLabel) label = forLabel.textContent || '';
+      } catch (err) {
+        // ignore invalid selector
+      }
+    }
+    if (!label) {
+      const direct = element.closest?.('label');
+      if (direct) label = direct.textContent || '';
+    }
+    if (!label && element.getAttribute) {
+      label = element.getAttribute('aria-label') || '';
+      if (!label) {
+        const labelledBy = element.getAttribute('aria-labelledby');
+        if (labelledBy) {
+          label = labelledBy
+            .split(/\s+/)
+            .map((id) => (doc.getElementById(id)?.textContent || '').trim())
+            .filter(Boolean)
+            .join(' ');
+        }
+      }
+      if (!label) {
+        label = element.getAttribute('placeholder') || '';
+      }
+    }
+    return (label || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function resolveSurveyAgentInputValue(action = {}, element) {
+    const valueInfo = {
+      text: typeof action.text === 'string' ? action.text : '',
+      identityKey: null,
+      usedIdentity: false,
+      missingIdentity: false,
+    };
+    let requestedKey = null;
+    if (typeof action.intent === 'string') {
+      const match = action.intent.match(/identity[:.]([\w-]+)/i);
+      if (match) requestedKey = match[1];
+    }
+    if (!requestedKey && typeof action.text === 'string') {
+      const placeholder = action.text.match(/{{\s*identity[:.]?([\w-]+)\s*}}/i);
+      if (placeholder) {
+        requestedKey = placeholder[1];
+        valueInfo.text = '';
+      }
+    }
+    if (!requestedKey && element) {
+      const inferred = detectField(element);
+      if (inferred) requestedKey = inferred;
+    }
+    if (requestedKey) {
+      valueInfo.identityKey = requestedKey;
+      const identityValue = activeIdentity && activeIdentity[requestedKey];
+      if (typeof identityValue === 'string' && identityValue.trim()) {
+        valueInfo.text = identityValue.trim();
+        valueInfo.usedIdentity = true;
+      } else if (valueInfo.text === '' || /{{\s*identity/i.test(valueInfo.text)) {
+        valueInfo.missingIdentity = true;
+      }
+    }
+    return valueInfo;
+  }
+
+  async function executeSurveyAgentAction(action = {}) {
+    if (!action || typeof action !== 'object') {
+      return { ok: false, error: 'INVALID_ACTION', code: 'act_errors_invalidAction' };
+    }
+
+    const type = action.type;
+    const locator = action.locator || {};
+
+    let resolved = null;
+    if (type === 'scroll' && action.mode && action.mode !== 'element') {
+      resolved = { element: null, doc: document, frameElements: [], frameChain: [] };
+    } else {
+      resolved = resolveSurveyAgentElement(locator);
+      if (!resolved.element) {
+        return {
+          ok: false,
+          error: resolved.reason || 'ELEMENT_NOT_FOUND',
+          code: action.intent || 'act_errors_elementNotExist',
+          details: { locator },
+        };
+      }
+    }
+
+    try {
+      switch (type) {
+        case 'click': {
+          focusFrameElements(resolved.frameElements);
+          simulateElementClick(resolved.element, {
+            scrollIntoView: action.scrollIntoView !== false,
+            scrollBehavior: action.scrollBehavior,
+          });
+          const text = extractElementText(resolved.element);
+          return {
+            ok: true,
+            code: 'act_click_ok',
+            details: {
+              index: locator.highlightIndex,
+              text,
+            },
+          };
+        }
+        case 'type': {
+          focusFrameElements(resolved.frameElements);
+          const valueInfo = resolveSurveyAgentInputValue(action, resolved.element);
+          if (valueInfo.missingIdentity) {
+            return {
+              ok: false,
+              error: 'IDENTITY_VALUE_MISSING',
+              code: 'act_identity_missing',
+              details: { key: valueInfo.identityKey, index: locator.highlightIndex },
+            };
+          }
+          const textToType = valueInfo.text || '';
+          await typeValueIntoElement(resolved.element, textToType, {
+            typingSpeed: action.typingSpeed,
+            replace: action.replace !== false,
+          });
+          const label = getElementLabelText(resolved.element);
+          return {
+            ok: true,
+            code: 'act_inputText_ok',
+            details: {
+              index: locator.highlightIndex,
+              text: textToType,
+              identityKey: valueInfo.usedIdentity ? valueInfo.identityKey : undefined,
+              question: label || undefined,
+            },
+          };
+        }
+        case 'select': {
+          focusFrameElements(resolved.frameElements);
+          if (!resolved.element || resolved.element.tagName !== 'SELECT') {
+            return {
+              ok: false,
+              error: 'NOT_A_SELECT_ELEMENT',
+              code: 'act_selectDropdownOption_notSelect',
+              details: { tagName: resolved.element?.tagName, index: locator.highlightIndex },
+            };
+          }
+          const valueInfo = resolveSurveyAgentInputValue(action, resolved.element);
+          if (valueInfo.missingIdentity) {
+            return {
+              ok: false,
+              error: 'IDENTITY_VALUE_MISSING',
+              code: 'act_identity_missing',
+              details: { key: valueInfo.identityKey, index: locator.highlightIndex },
+            };
+          }
+          const selection = selectOptionOnElement(resolved.element, valueInfo.text || action.text || '');
+          if (!selection.selected) {
+            return {
+              ok: false,
+              error: 'OPTION_NOT_FOUND',
+              code: 'act_selectDropdownOption_failed',
+              details: {
+                index: locator.highlightIndex,
+                text: valueInfo.text || action.text || '',
+                identityKey: valueInfo.identityKey,
+              },
+            };
+          }
+          const label = getElementLabelText(resolved.element);
+          return {
+            ok: true,
+            code: 'act_selectDropdownOption_ok',
+            details: {
+              index: locator.highlightIndex,
+              value: selection.value,
+              text: selection.text,
+              identityKey: valueInfo.usedIdentity ? valueInfo.identityKey : undefined,
+              question: label || undefined,
+            },
+          };
+        }
+        case 'scroll': {
+          const scrollDetails = performScrollAction(action, resolved);
+          return {
+            ok: true,
+            code: 'act_scroll_ok',
+            details: scrollDetails,
+          };
+        }
+        default:
+          return { ok: false, error: `UNKNOWN_ACTION:${type}`, code: 'act_errors_unknownAction' };
+      }
+    } catch (err) {
+      return {
+        ok: false,
+        error: err?.message || String(err),
+        code: action.intent || 'act_errors_unexpected',
+        details: { locator, reason: resolved?.reason },
+      };
+    }
+  }
 
   // Identity handling
   const FIELD_KEYWORDS = {
@@ -53,7 +2503,6 @@ function init() {
     companyAddress: ['company_address','business_address','work_address','office_address','corporate_address','company_location','workplace_address','company_addr',/office.?address|business.?addr/]
   };
 
-  let activeIdentity = null;
   function loadIdentity(){
     chrome.storage.local.get(['activeIdentityId','identities'], res => {
       const list = res.identities || [];
@@ -92,11 +2541,7 @@ function init() {
   function detectField(el){
     if(!el) return null;
     const attrs = ((el.id||'') + ' ' + (el.name||'') + ' ' + (el.placeholder||'') + ' ' + (el.type||'')).toLowerCase();
-    let labelText = '';
-    if(el.id){
-      const lbl = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
-      if(lbl) labelText = lbl.textContent.toLowerCase();
-    }
+    const labelText = getElementLabelText(el).toLowerCase();
     const hay = attrs + ' ' + labelText;
     for(const [key, vals] of Object.entries(FIELD_KEYWORDS)){
       if(vals.some(v=> v instanceof RegExp ? v.test(hay) : hay.includes(v))) return key;
@@ -401,6 +2846,7 @@ function init() {
           <li><a href="#" data-action="ocr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="12" cy="12" r="3"/></svg><span>OCR Capture</span></a></li>
           <li><a href="#" data-action="ocr-full"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg><span>OCR Full Page</span></a></li>
           <li><a href="#" data-action="write-last"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span>Write Last Answer</span></a></li>
+          <li><a href="#" data-action="survey-agent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="10" rx="2"/><path d="M12 7V3"/><path d="M8 11h.01"/><path d="M16 11h.01"/><path d="M8 15h8"/></svg><span>Survey Agent</span></a></li>
           <li><a href="#" data-action="clear-context"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg><span>Clear AI Context</span></a></li>
           <li><a href="#" data-action="ip-info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg><span>IP Information</span></a></li>
           <li><a href="#" data-action="ip-qual"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg><span>IP Qualification</span></a></li>
@@ -628,6 +3074,9 @@ function init() {
         } catch (e) {
           showNotification('No last answer available');
         }
+        break;
+      case 'survey-agent':
+        openSurveyAgentPanel();
         break;
       case 'clear-context':
         await chrome.storage.local.set({ contextQA: [] });
@@ -3619,6 +6068,98 @@ function init() {
     }, 100);
   }
 
+  function createSurveyAgentPanel(title, bodyHtml, onClose) {
+    const existing = document.getElementById('zepra-survey-agent-panel');
+    if (existing && existing.isConnected) {
+      if (typeof existing.__zepraCleanup === 'function') {
+        try {
+          existing.__zepraCleanup();
+        } catch (err) {
+          // ignore cleanup failures
+        }
+      }
+      if (typeof existing.__zepraOnClose === 'function') {
+        try {
+          existing.__zepraOnClose();
+        } catch (err) {
+          // ignore stale callbacks
+        }
+      }
+      existing.remove();
+    }
+
+    const panel = document.createElement('aside');
+    panel.id = 'zepra-survey-agent-panel';
+    panel.setAttribute('role', 'complementary');
+    panel.setAttribute('aria-label', title);
+    panel.innerHTML = `
+      <div class="survey-agent-shell">
+        <header class="survey-agent-shell-header">
+          <div class="survey-agent-shell-title">
+            <span class="survey-agent-shell-heading">${title}</span>
+            <span class="survey-agent-shell-subtitle">LLM-powered survey autopilot</span>
+          </div>
+          <div class="survey-agent-shell-actions">
+            <button type="button" class="survey-agent-close" aria-label="Close survey agent panel">&times;</button>
+          </div>
+        </header>
+        <div class="survey-agent-shell-body"></div>
+      </div>
+    `;
+
+    const shellBody = panel.querySelector('.survey-agent-shell-body');
+    if (shellBody) {
+      shellBody.innerHTML = bodyHtml || '';
+    }
+
+    const closeBtn = panel.querySelector('.survey-agent-close');
+
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closePanel();
+      }
+    };
+
+    const closePanel = () => {
+      panel.classList.remove('is-open');
+      panel.classList.add('is-closing');
+      panel.__zepraCleanup?.();
+      setTimeout(() => {
+        if (panel.isConnected) {
+          panel.remove();
+        }
+        panel.__zepraOnClose?.();
+      }, 220);
+    };
+
+    if (closeBtn) {
+      closeBtn.addEventListener('click', closePanel);
+    }
+
+    panel.__zepraCleanup = () => {
+      window.removeEventListener('keydown', handleEscape, true);
+      if (closeBtn) {
+        closeBtn.removeEventListener('click', closePanel);
+      }
+    };
+
+    panel.__zepraOnClose = () => {
+      if (typeof onClose === 'function') {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleEscape, true);
+
+    document.body.appendChild(panel);
+    requestAnimationFrame(() => {
+      panel.classList.add('is-open');
+    });
+
+    return panel;
+  }
+
   function createStyledModal(title, content, onClose) {
     // Remove existing modal
     const existing = document.getElementById('zepra-styled-modal');
@@ -3784,15 +6325,23 @@ function init() {
             <div class="loading"></div>
             ${showReasoning ? `
             <div class="split-pane" style="display:none;">
-              <div class="pane answer-pane">
-                <div class="pane-title">Answer</div>
-                <div class="answer-text"></div>
-                <button class="btn-copy-answer">Copy</button>
+              <div class="pane-card answer-pane">
+                <div class="pane-header">
+                  <div class="pane-title">Answer</div>
+                  <button class="pane-copy btn-copy-answer" type="button">Copy</button>
+                </div>
+                <div class="pane-body">
+                  <div class="pane-text answer-text"></div>
+                </div>
               </div>
-              <div class="pane reason-pane">
-                <div class="pane-title">Reason</div>
-                <div class="reason-text"></div>
-                <button class="btn-copy-reason">Copy</button>
+              <div class="pane-card reason-pane">
+                <div class="pane-header">
+                  <div class="pane-title">Reason</div>
+                  <button class="pane-copy btn-copy-reason" type="button">Copy</button>
+                </div>
+                <div class="pane-body">
+                  <div class="pane-text reason-text"></div>
+                </div>
               </div>
             </div>
             ` : `
@@ -3872,10 +6421,191 @@ function init() {
         to { opacity: 1; }
       }
 
-      .answer-container.split .split-pane{display:flex;gap:10px;}
-      .answer-container.split .pane{flex:1;background:#1f1f1f;padding:10px;border-radius:6px;display:flex;flex-direction:column;}
-      .answer-container.split .pane-title{font-weight:bold;margin-bottom:6px;}
-      .answer-container.split .pane button{align-self:flex-end;margin-top:8px;}
+      .answer-container.split .split-pane {
+        display:grid;
+        gap:1rem;
+        grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+      }
+
+      .answer-container.split .pane-card {
+        position:relative;
+        display:flex;
+        flex-direction:column;
+        gap:0.75rem;
+        padding:1.15rem;
+        min-height:200px;
+        border-radius:1rem;
+        border:1px solid rgba(148,163,184,0.22);
+        background:linear-gradient(165deg, rgba(12,18,32,0.94), rgba(17,24,39,0.82));
+        box-shadow:0 24px 45px -35px rgba(15,23,42,0.95), 0 0 0 1px rgba(15,23,42,0.6);
+        backdrop-filter:blur(12px);
+        overflow:hidden;
+      }
+
+      .answer-container.split .pane-card::before {
+        content:'';
+        position:absolute;
+        inset:-1px;
+        border-radius:inherit;
+        background:radial-gradient(circle at 20% -10%, rgba(59,130,246,0.18), transparent 60%);
+        opacity:0.85;
+        pointer-events:none;
+        z-index:0;
+      }
+
+      .answer-container.split .answer-pane::before {
+        background:radial-gradient(circle at 20% -10%, rgba(45,212,191,0.3), transparent 60%);
+      }
+
+      .answer-container.split .reason-pane::before {
+        background:radial-gradient(circle at 20% -10%, rgba(250,204,21,0.32), rgba(244,114,182,0.22) 55%, transparent 80%);
+      }
+
+      .answer-container.split .pane-card > * {
+        position:relative;
+        z-index:1;
+      }
+
+      .answer-container.split .answer-pane {
+        border-color:rgba(45,212,191,0.35);
+        box-shadow:0 24px 40px -32px rgba(20,184,166,0.55), 0 0 0 1px rgba(20,184,166,0.3);
+      }
+
+      .answer-container.split .reason-pane {
+        border-color:rgba(244,114,182,0.4);
+        background:linear-gradient(170deg, rgba(23,16,32,0.95), rgba(27,20,35,0.82));
+        box-shadow:0 24px 40px -32px rgba(236,72,153,0.55), 0 0 0 1px rgba(236,72,153,0.28);
+      }
+
+      .answer-container.split .pane-header {
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:0.75rem;
+        padding-bottom:0.5rem;
+        border-bottom:1px solid rgba(148,163,184,0.18);
+        flex-wrap:wrap;
+      }
+
+      .answer-container.split .pane-title {
+        margin:0;
+        font-weight:700;
+        font-size:0.85rem;
+        letter-spacing:0.08em;
+        text-transform:uppercase;
+        color:#bae6fd;
+        line-height:1.1;
+      }
+
+      .answer-container.split .answer-pane .pane-title {
+        color:#5eead4;
+        text-shadow:0 0 12px rgba(94,234,212,0.35);
+      }
+
+      .answer-container.split .reason-pane .pane-title {
+        color:#f9a8d4;
+        text-shadow:0 0 12px rgba(244,114,182,0.35);
+      }
+
+      .answer-container.split .answer-pane .pane-header {
+        border-color:rgba(45,212,191,0.2);
+      }
+
+      .answer-container.split .reason-pane .pane-header {
+        border-color:rgba(244,114,182,0.24);
+      }
+
+      .answer-container.split .pane-body {
+        flex:1;
+        padding:0.9rem;
+        border-radius:0.85rem;
+        background:linear-gradient(160deg, rgba(10,16,28,0.85), rgba(15,23,42,0.7));
+        border:1px solid rgba(148,163,184,0.18);
+        box-shadow:inset 0 0 0 1px rgba(15,23,42,0.4);
+        overflow-y:auto;
+        max-height:min(300px,40vh);
+      }
+
+      .answer-container.split .answer-pane .pane-body {
+        border-color:rgba(45,212,191,0.28);
+        box-shadow:inset 0 0 0 1px rgba(13,148,136,0.3);
+      }
+
+      .answer-container.split .reason-pane .pane-body {
+        border-color:rgba(244,114,182,0.3);
+        box-shadow:inset 0 0 0 1px rgba(244,114,182,0.25);
+        background:linear-gradient(160deg, rgba(23,16,32,0.92), rgba(27,20,35,0.82));
+      }
+
+      .answer-container.split .pane-body::-webkit-scrollbar {
+        width:6px;
+      }
+
+      .answer-container.split .pane-body::-webkit-scrollbar-track {
+        background:transparent;
+      }
+
+      .answer-container.split .answer-pane .pane-body::-webkit-scrollbar-thumb {
+        background:rgba(45,212,191,0.45);
+      }
+
+      .answer-container.split .reason-pane .pane-body::-webkit-scrollbar-thumb {
+        background:rgba(244,114,182,0.55);
+      }
+
+      .answer-container.split .pane-text {
+        color:#f8fafc;
+        font-size:0.95rem;
+        line-height:1.6;
+        white-space:pre-wrap;
+        word-break:break-word;
+        text-align:start;
+        unicode-bidi:plaintext;
+      }
+
+      .answer-container.split .pane-copy {
+        border:none;
+        border-radius:999px;
+        padding:0.4rem 0.95rem;
+        font-size:0.7rem;
+        letter-spacing:0.08em;
+        text-transform:uppercase;
+        font-weight:600;
+        cursor:pointer;
+        transition:transform .2s ease, box-shadow .2s ease, background .2s ease;
+        color:#f8fafc;
+        background:rgba(148,163,184,0.24);
+        flex-shrink:0;
+      }
+
+      .answer-container.split .pane-copy:hover {
+        transform:translateY(-1px);
+      }
+
+      .answer-container.split .pane-copy:focus-visible {
+        outline:2px solid rgba(250,204,21,0.6);
+        outline-offset:2px;
+      }
+
+      .answer-container.split .answer-pane .pane-copy {
+        background:rgba(45,212,191,0.22);
+        color:#5eead4;
+        box-shadow:0 10px 25px -20px rgba(20,184,166,0.8), 0 0 0 1px rgba(45,212,191,0.35);
+      }
+
+      .answer-container.split .answer-pane .pane-copy:hover {
+        background:rgba(45,212,191,0.32);
+      }
+
+      .answer-container.split .reason-pane .pane-copy {
+        background:rgba(244,114,182,0.22);
+        color:#f9a8d4;
+        box-shadow:0 10px 25px -20px rgba(236,72,153,0.8), 0 0 0 1px rgba(244,114,182,0.35);
+      }
+
+      .answer-container.split .reason-pane .pane-copy:hover {
+        background:rgba(244,114,182,0.32);
+      }
 
       .za-modal {
         background-color: rgba(17,24,39,0.8);
@@ -3952,10 +6682,15 @@ function init() {
         min-height:60px;
       }
 
-      .answer-text {
+      .answer-container:not(.split) .answer-text {
         display:none;
         flex-direction:column;
         gap:0.75rem;
+      }
+
+      .answer-container.split .answer-text,
+      .answer-container.split .reason-text {
+        display:block;
       }
 
       .answer-card {
@@ -4086,9 +6821,23 @@ function init() {
         loadEl.style.display = 'none';
         if (useReason) {
           const split = modal.querySelector('.split-pane');
-          split.style.display = 'flex';
-          modal.querySelector('.answer-pane .answer-text').textContent = answer;
-          modal.querySelector('.reason-pane .reason-text').textContent = reason;
+          split.style.display = 'grid';
+          const answerEl = modal.querySelector('.answer-pane .answer-text');
+          const reasonEl = modal.querySelector('.reason-pane .reason-text');
+          const answerBody = modal.querySelector('.answer-pane .pane-body');
+          const reasonBody = modal.querySelector('.reason-pane .pane-body');
+          if (answerEl) {
+            answerEl.textContent = answer;
+            answerEl.style.display = 'block';
+            answerEl.setAttribute('dir', 'auto');
+          }
+          if (reasonEl) {
+            reasonEl.textContent = reason;
+            reasonEl.style.display = 'block';
+            reasonEl.setAttribute('dir', 'auto');
+          }
+          if (answerBody) answerBody.scrollTop = 0;
+          if (reasonBody) reasonBody.scrollTop = 0;
           modal.querySelector('.modal-actions').style.display = 'flex';
           modal.querySelector('.btn-copy-answer').addEventListener('click', () => {
             navigator.clipboard.writeText(answer);
@@ -4304,6 +7053,16 @@ function init() {
           case 'GET_SELECTED_OR_DOM_TEXT':
             sendResponse({ ok: true, text: getSelectedOrDomText() });
             break;
+          case 'SURVEY_AGENT_COLLECT_DOM': {
+            const domTree = await collectSurveyDomTree(msg.options || {});
+            sendResponse({ ok: true, tree: domTree });
+            break;
+          }
+          case 'SURVEY_AGENT_EXECUTE_ACTION': {
+            const result = await executeSurveyAgentAction(msg.action || {});
+            sendResponse(result);
+            break;
+          }
           case 'START_OCR_SELECTION': {
             const rect = await showOverlayAndSelect();
             sendResponse({ ok: true, rect });
@@ -4547,9 +7306,12 @@ chrome.storage.onChanged.addListener((chg, area) => {
 });
 
 // Clean Professional IP Qualification Modal
-function showCleanIPQualificationModal(data){
-  if(!data){
-    createStyledModal('IP Qualification', `<div style="padding:20px;text-align:center;color:#e2e8f0;">Could not fetch IP data. Please try again.</div>`);
+function showCleanIPQualificationModal(data) {
+  if (!data) {
+    createStyledModal(
+      'IP Qualification',
+      `<div style="padding:20px;text-align:center;color:#e2e8f0;">Could not fetch IP data. Please try again.</div>`
+    );
     return;
   }
 
@@ -4558,31 +7320,35 @@ function showCleanIPQualificationModal(data){
   const city = data.city || data.region_name || data.region || '';
   const cc = (data.country_code || data.countryCode || data.country_code2 || '').toUpperCase();
   const isp = data.isp || data.org || '';
-  const flag = cc ? cc.replace(/./g, ch => String.fromCodePoint(127397 + ch.charCodeAt(0))) : '';
+  const flag = cc ? cc.replace(/./g, (ch) => String.fromCodePoint(127397 + ch.charCodeAt(0))) : '';
 
   const detection = data?.blacklists?.detection || 'none';
+  const detectionEngines = Array.isArray(data?.blacklists?.engines)
+    ? data.blacklists.engines
+        .filter((engine) => engine?.listed)
+        .map((engine) => engine?.name || engine?.engine)
+        .filter(Boolean)
+    : [];
   const proxy = !!data?.security?.proxy;
   const vpn = !!data?.security?.vpn;
   const tor = !!data?.security?.tor;
 
-  // Enhanced status logic with three states
   const riskPass = risk < 30;
   const riskWarning = risk >= 30 && risk <= 50;
   const riskFail = risk > 50;
-  const blacklistPass = detection === 'none';
+  const blacklistPass = detection === 'none' && detectionEngines.length === 0;
   const anonymityPass = !proxy && !vpn && !tor;
 
-  // Determine overall status
   let statusState = 'qualified';
-  let statusText = 'QUALIFIED';
+  let statusText = 'Qualified';
   let statusMessage = 'Your IP is clean and ready to use.';
   let statusClass = 'status-qualified';
 
   if (riskFail || !blacklistPass || !anonymityPass) {
     statusState = 'not-qualified';
-    statusText = 'NOT QUALIFIED';
+    statusText = 'Not Qualified';
     statusClass = 'status-not-qualified';
-    
+
     if (riskFail) {
       statusMessage = 'Warning: This IP is high-risk and has a bad reputation. It is not recommended for use.';
     } else if (!blacklistPass) {
@@ -4592,292 +7358,470 @@ function showCleanIPQualificationModal(data){
     }
   } else if (riskWarning) {
     statusState = 'warning';
-    statusText = 'WARNING';
+    statusText = 'Warning';
     statusClass = 'status-warning';
     statusMessage = 'Your IP is moderately risky. Proceed with caution.';
   }
 
-  // SVG Icons
   const shieldSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`;
   const eyeSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>`;
   const globeSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`;
-  
-  // Status-specific icons
-  const checkSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="check-icon"><polyline points="20 6 9 17 4 12"/></svg>`;
-  const warningSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="warning-icon"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="m12 17 .01 0"/></svg>`;
-  const xSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="x-icon"><path d="M18 6 6 18M6 6l12 12"/></svg>`;
+  const copySVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`;
 
-  // Build clean checklist
+  const checkSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+  const warningSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="m12 17 .01 0"/></svg>`;
+  const xSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>`;
+  const checkCompactSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+
+  const detectionSources = detectionEngines.length
+    ? detectionEngines
+    : detection !== 'none' && detection
+      ? [detection]
+      : [];
+  const formattedSources = detectionSources
+    .map((src) => src.replace(/[_-]+/g, ' '))
+    .map((src) => src.replace(/\b\w/g, (ch) => ch.toUpperCase()));
+
+  const riskDetail = riskFail
+    ? `High risk score detected • ${risk}/100`
+    : riskWarning
+      ? `Moderate risk profile • ${risk}/100`
+      : `Low risk score • ${risk}/100`;
+  const blacklistDetail = blacklistPass
+    ? 'No blacklist matches detected'
+    : `Listed on ${formattedSources.join(', ') || 'reported sources'}`;
+  const anonymityFlags = [];
+  if (proxy) anonymityFlags.push('Proxy');
+  if (vpn) anonymityFlags.push('VPN');
+  if (tor) anonymityFlags.push('Tor');
+  const anonymityDetail = anonymityPass
+    ? 'No proxy, VPN or Tor activity detected'
+    : `Detected: ${anonymityFlags.join(', ') || 'Anonymity services'}`;
+
   const checks = [
-    { 
-      pass: riskPass, 
-      warning: riskWarning,
-      fail: riskFail,
-      label: 'Risk Score Assessment', 
-      icon: shieldSVG 
+    {
+      key: 'risk',
+      label: 'Risk Score Assessment',
+      detail: riskDetail,
+      state: riskFail ? 'fail' : riskWarning ? 'warn' : 'pass',
+      icon: shieldSVG
     },
-    { 
-      pass: blacklistPass, 
-      warning: false,
-      fail: !blacklistPass,
-      label: 'Blacklist Verification', 
-      icon: eyeSVG 
+    {
+      key: 'blacklist',
+      label: 'Blacklist Verification',
+      detail: blacklistDetail,
+      state: blacklistPass ? 'pass' : 'fail',
+      icon: eyeSVG
     },
-    { 
-      pass: anonymityPass, 
-      warning: false,
-      fail: !anonymityPass,
-      label: 'Anonymity Detection', 
-      icon: globeSVG 
-    },
+    {
+      key: 'anonymity',
+      label: 'Anonymity Detection',
+      detail: anonymityDetail,
+      state: anonymityPass ? 'pass' : 'fail',
+      icon: globeSVG
+    }
   ];
 
-  const checklistHTML = checks
-    .map((c, i) => {
-      let resultIcon = checkSVG;
-      let resultClass = 'check-result-pass';
-      
-      if (c.fail) {
-        resultIcon = xSVG;
-        resultClass = 'check-result-fail';
-      } else if (c.warning) {
-        resultIcon = warningSVG;
-        resultClass = 'check-result-warning';
-      }
-      
+  const stateBadges = {
+    pass: { label: 'Passed', icon: checkSVG },
+    warn: { label: 'Attention', icon: warningSVG },
+    fail: { label: 'Failed', icon: xSVG }
+  };
+
+  const checkHTML = checks
+    .map((item) => {
+      const badge = stateBadges[item.state];
       return `
-      <div class="ipq-check-item ${resultClass}" style="--i:${i};">
-        <div class="ipq-check-left">${c.icon}<span>${c.label}</span></div>
-        <div class="ipq-check-result">${resultIcon}</div>
-      </div>`;
+        <div class="ipq-check-card ipq-${item.state}">
+          <div class="ipq-check-left">
+            <div class="ipq-check-icon">${item.icon}</div>
+            <div class="ipq-check-titles">
+              <span class="ipq-check-title">${item.label}</span>
+              <span class="ipq-check-detail">${item.detail}</span>
+            </div>
+          </div>
+          <div class="ipq-check-status">${badge.icon}<span>${badge.label}</span></div>
+        </div>`;
     })
     .join('');
 
-  // Header icons based on status
+  const locationParts = [city, cc].filter(Boolean).join(', ');
+  const locationDisplay = locationParts ? `${flag ? `${flag} ` : ''}${locationParts}` : 'Unknown';
+  const ispDisplay = isp || 'Unknown';
+
+  const html = `
+    <style>
+      #zepra-styled-modal .styled-modal-content.ipq-shell {
+        background: linear-gradient(180deg, rgba(15,23,42,0.95) 0%, rgba(11,15,25,0.92) 100%);
+        border: none;
+        border-radius: 20px;
+        box-shadow: 0 25px 50px -12px rgba(15,23,42,0.8);
+        max-width: 420px;
+        width: min(420px, 92vw);
+        overflow: hidden;
+      }
+      #zepra-styled-modal .ipq-shell {
+        --ipq-accent: #22c55e;
+        --ipq-accent-soft: rgba(34,197,94,0.2);
+        --ipq-accent-strong: rgba(34,197,94,0.35);
+      }
+      #zepra-styled-modal .ipq-shell.status-warning {
+        --ipq-accent: #f59e0b;
+        --ipq-accent-soft: rgba(245,158,11,0.18);
+        --ipq-accent-strong: rgba(245,158,11,0.32);
+      }
+      #zepra-styled-modal .ipq-shell.status-not-qualified {
+        --ipq-accent: #ef4444;
+        --ipq-accent-soft: rgba(239,68,68,0.18);
+        --ipq-accent-strong: rgba(239,68,68,0.32);
+      }
+      #zepra-styled-modal .ipq-shell .styled-modal-header {
+        background: linear-gradient(90deg, rgba(148,163,184,0.14), rgba(148,163,184,0));
+        border-bottom: 1px solid rgba(148,163,184,0.18);
+        padding: 18px 22px;
+      }
+      #zepra-styled-modal .ipq-shell .styled-modal-header h3 {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin: 0;
+        color: #f8fafc;
+        font-size: 17px;
+        font-weight: 700;
+      }
+      #zepra-styled-modal .ipq-shell .styled-modal-header svg {
+        width: 22px;
+        height: 22px;
+        stroke: var(--ipq-accent);
+        color: var(--ipq-accent);
+      }
+      #zepra-styled-modal .ipq-shell .styled-modal-close {
+        color: #94a3b8;
+        border-radius: 10px;
+      }
+      #zepra-styled-modal .ipq-shell .styled-modal-close:hover {
+        background: rgba(148,163,184,0.16);
+        color: #e2e8f0;
+      }
+      #zepra-styled-modal .ipq-shell .styled-modal-body {
+        padding: 1.5rem;
+        background: radial-gradient(circle at top, rgba(30,41,59,0.65), rgba(15,23,42,0.92));
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+        max-height: 65vh;
+        overflow-y: auto;
+      }
+      #zepra-styled-modal .ipq-shell .styled-modal-body::-webkit-scrollbar {
+        width: 6px;
+      }
+      #zepra-styled-modal .ipq-shell .styled-modal-body::-webkit-scrollbar-thumb {
+        background: rgba(148,163,184,0.35);
+        border-radius: 999px;
+      }
+      .ipq-status-card {
+        background: rgba(15,23,42,0.55);
+        border: 1px solid rgba(148,163,184,0.2);
+        border-radius: 1rem;
+        padding: 1.2rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        box-shadow: inset 0 0 0 1px rgba(15,23,42,0.35);
+      }
+      .ipq-status-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+      .ipq-status-head {
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+        min-width: 0;
+      }
+      .ipq-status-label {
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        letter-spacing: 0.14em;
+        font-weight: 600;
+        color: var(--ipq-accent);
+      }
+      .ipq-status-message {
+        margin: 0;
+        color: #e2e8f0;
+        font-size: 0.92rem;
+        line-height: 1.45;
+      }
+      .ipq-risk-block {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 0.25rem;
+        min-width: 0;
+      }
+      .ipq-risk-caption {
+        font-size: 0.72rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: #94a3b8;
+      }
+      .ipq-risk-value {
+        font-size: 2.6rem;
+        font-weight: 700;
+        color: var(--ipq-accent);
+        font-family: 'Fira Code', 'SFMono-Regular', Menlo, Consolas, monospace;
+        line-height: 1;
+      }
+      .ipq-meta-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 0.75rem;
+      }
+      .ipq-meta-card {
+        background: rgba(15,23,42,0.5);
+        border: 1px solid rgba(148,163,184,0.18);
+        border-radius: 0.9rem;
+        padding: 0.85rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        min-width: 0;
+      }
+      .ipq-meta-card.ipq-span {
+        grid-column: span 2;
+      }
+      .ipq-meta-label {
+        font-size: 0.72rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: #94a3b8;
+      }
+      .ipq-meta-row {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+      .ipq-meta-value {
+        color: #f8fafc;
+        font-weight: 600;
+        word-break: break-word;
+      }
+      .ipq-ip-value {
+        font-family: 'Fira Code', 'SFMono-Regular', Menlo, Consolas, monospace;
+        font-size: 1.1rem;
+        color: var(--ipq-accent);
+      }
+      .ipq-copy-btn {
+        margin-left: auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        font-size: 0.75rem;
+        background: rgba(148,163,184,0.12);
+        border: 1px solid rgba(148,163,184,0.28);
+        color: #e2e8f0;
+        padding: 0.35rem 0.6rem;
+        border-radius: 999px;
+        cursor: pointer;
+        transition: background 0.2s ease, color 0.2s ease;
+      }
+      .ipq-copy-btn:hover {
+        background: rgba(148,163,184,0.24);
+      }
+      .ipq-copy-btn svg {
+        width: 14px;
+        height: 14px;
+      }
+      .ipq-copy-btn.copied {
+        background: var(--ipq-accent-soft);
+        border-color: var(--ipq-accent);
+        color: var(--ipq-accent);
+      }
+      .ipq-copy-btn.error {
+        background: rgba(239,68,68,0.18);
+        border-color: rgba(239,68,68,0.4);
+        color: #f87171;
+      }
+      .ipq-check-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+      .ipq-check-card {
+        background: rgba(15,23,42,0.48);
+        border: 1px solid rgba(148,163,184,0.16);
+        border-radius: 0.9rem;
+        padding: 0.95rem 1rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        min-width: 0;
+      }
+      .ipq-check-left {
+        display: flex;
+        align-items: center;
+        gap: 0.8rem;
+        min-width: 0;
+      }
+      .ipq-check-icon {
+        width: 34px;
+        height: 34px;
+        border-radius: 0.8rem;
+        background: rgba(148,163,184,0.12);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+      .ipq-check-icon svg {
+        width: 18px;
+        height: 18px;
+        stroke-width: 2;
+      }
+      .ipq-check-titles {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+        min-width: 0;
+      }
+      .ipq-check-title {
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: #f8fafc;
+      }
+      .ipq-check-detail {
+        color: #94a3b8;
+        font-size: 0.82rem;
+        line-height: 1.35;
+      }
+      .ipq-check-status {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        font-weight: 600;
+        font-size: 0.85rem;
+        flex-shrink: 0;
+      }
+      .ipq-check-status svg {
+        width: 18px;
+        height: 18px;
+      }
+      .ipq-check-card.ipq-pass .ipq-check-icon {
+        background: var(--ipq-accent-soft);
+        color: var(--ipq-accent);
+      }
+      .ipq-check-card.ipq-pass .ipq-check-status {
+        color: var(--ipq-accent);
+      }
+      .ipq-check-card.ipq-warn .ipq-check-icon {
+        background: rgba(245,158,11,0.18);
+        color: #f59e0b;
+      }
+      .ipq-check-card.ipq-warn .ipq-check-status {
+        color: #f59e0b;
+      }
+      .ipq-check-card.ipq-fail .ipq-check-icon {
+        background: rgba(239,68,68,0.18);
+        color: #ef4444;
+      }
+      .ipq-check-card.ipq-fail .ipq-check-status {
+        color: #ef4444;
+      }
+      .ipq-footer-note {
+        font-size: 0.75rem;
+        color: #64748b;
+        text-align: center;
+      }
+      @media (max-width: 520px) {
+        #zepra-styled-modal .ipq-shell .styled-modal-body {
+          padding: 1.25rem;
+        }
+        .ipq-status-top {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+        .ipq-risk-block {
+          align-items: flex-start;
+        }
+        .ipq-meta-card.ipq-span {
+          grid-column: span 1;
+        }
+      }
+    </style>
+    <div class="ipq-body">
+      <section class="ipq-status-card">
+        <div class="ipq-status-top">
+          <div class="ipq-status-head">
+            <span class="ipq-status-label">${statusText.toUpperCase()}</span>
+            <p class="ipq-status-message">${statusMessage}</p>
+          </div>
+          <div class="ipq-risk-block">
+            <span class="ipq-risk-caption">Risk Score</span>
+            <span class="ipq-risk-value">${risk}</span>
+          </div>
+        </div>
+      </section>
+      <section class="ipq-meta-grid">
+        <div class="ipq-meta-card ipq-span">
+          <div class="ipq-meta-label">IP Address</div>
+          <div class="ipq-meta-row">
+            <span class="ipq-meta-value ipq-ip-value">${ip || 'Unknown'}</span>
+            ${ip ? `<button class="ipq-copy-btn" data-copy="${ip}">${copySVG}<span>Copy</span></button>` : ''}
+          </div>
+        </div>
+        <div class="ipq-meta-card">
+          <div class="ipq-meta-label">Location</div>
+          <div class="ipq-meta-value">${locationDisplay}</div>
+        </div>
+        <div class="ipq-meta-card">
+          <div class="ipq-meta-label">ISP</div>
+          <div class="ipq-meta-value">${ispDisplay}</div>
+        </div>
+      </section>
+      <section class="ipq-check-grid">${checkHTML}</section>
+      <p class="ipq-footer-note">Scores are provided by ip-score.com and refreshed on each request.</p>
+    </div>`;
+
   const shieldCheckSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>`;
   const shieldWarningSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 7v6"/><path d="m12 17 .01 0"/></svg>`;
   const shieldOffSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 9l6 6M15 9l-6 6"/></svg>`;
-  
+
   let headerIcon = shieldCheckSVG;
   if (statusState === 'warning') headerIcon = shieldWarningSVG;
   else if (statusState === 'not-qualified') headerIcon = shieldOffSVG;
 
-  const html = `
-    <style>
-      /* Clean professional IP Qualification Modal */
-      .styled-modal-content.status-qualified { --ipq-color: #4ade80; }
-      .styled-modal-content.status-warning { --ipq-color: #fbbf24; }
-      .styled-modal-content.status-not-qualified { --ipq-color: #f43f5e; }
-      
-      /* Remove modal border and create clean look */
-      .styled-modal-content {
-        border: none !important;
-        box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5) !important;
-        background: rgba(20, 30, 48, 0.95) !important;
-        backdrop-filter: blur(20px) !important;
-      }
-
-      .ipq-modal {
-        position: relative;
-        max-width: 400px;
-        padding: 0;
-        background: transparent;
-        border: none;
-      }
-
-      .ipq-main {
-        padding: 32px 24px;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 32px;
-      }
-
-      /* Central Status Circle - Main Visual Element */
-      .ipq-status-circle {
-        position: relative;
-        width: 160px;
-        height: 160px;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        border: 3px solid var(--ipq-color);
-        border-radius: 50%;
-        background: rgba(0, 0, 0, 0.4);
-        box-shadow: 
-          0 0 30px var(--ipq-color),
-          inset 0 0 30px rgba(0, 0, 0, 0.5);
-        animation: circleGlow 2s ease-in-out infinite alternate;
-      }
-
-      @keyframes circleGlow {
-        from { 
-          box-shadow: 
-            0 0 30px var(--ipq-color),
-            inset 0 0 30px rgba(0, 0, 0, 0.5);
-        }
-        to { 
-          box-shadow: 
-            0 0 50px var(--ipq-color),
-            0 0 80px var(--ipq-color),
-            inset 0 0 30px rgba(0, 0, 0, 0.5);
-        }
-      }
-
-      .ipq-status-text {
-        font-size: 18px;
-        font-weight: 800;
-        color: var(--ipq-color);
-        text-shadow: 0 0 10px var(--ipq-color);
-        letter-spacing: 1px;
-        margin-bottom: 4px;
-      }
-
-      .ipq-risk-score {
-        font-size: 36px;
-        font-weight: 900;
-        color: var(--ipq-color);
-        text-shadow: 0 0 15px var(--ipq-color);
-        font-family: 'Courier New', monospace;
-      }
-
-      /* Simple Clean Checklist - No Boxes */
-      .ipq-checklist {
-        width: 100%;
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-        margin-top: 8px;
-      }
-
-      .ipq-check-item {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 12px 0;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        animation: itemFadeIn 0.5s ease forwards;
-        opacity: 0;
-        animation-delay: calc(var(--i) * 0.1s + 0.3s);
-      }
-
-      .ipq-check-item:last-child {
-        border-bottom: none;
-      }
-
-      @keyframes itemFadeIn {
-        from { opacity: 0; transform: translateY(10px); }
-        to { opacity: 1; transform: translateY(0); }
-      }
-
-      .ipq-check-left {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-      }
-
-      .ipq-check-left svg {
-        width: 18px;
-        height: 18px;
-        stroke: #9ca3af;
-      }
-
-      .ipq-check-left span {
-        font-size: 14px;
-        font-weight: 500;
-        color: #e2e8f0;
-      }
-
-      .ipq-check-result svg {
-        width: 20px;
-        height: 20px;
-      }
-
-      /* Status Icons with Colors */
-      .check-result-pass .check-icon {
-        stroke: var(--ipq-color);
-        filter: drop-shadow(0 0 6px var(--ipq-color));
-      }
-
-      .check-result-warning .warning-icon {
-        stroke: var(--ipq-color);
-        fill: var(--ipq-color);
-        filter: drop-shadow(0 0 6px var(--ipq-color));
-      }
-
-      .check-result-fail .x-icon {
-        stroke: var(--ipq-color);
-        filter: drop-shadow(0 0 6px var(--ipq-color));
-      }
-
-      /* Clean Footer - Simple Text */
-      .ipq-footer {
-        width: 100%;
-        text-align: center;
-        margin-top: 24px;
-      }
-
-      .ipq-summary {
-        font-size: 14px;
-        font-weight: 600;
-        color: var(--ipq-color);
-        text-shadow: 0 0 8px var(--ipq-color);
-        margin-bottom: 16px;
-        animation: summaryFade 0.6s ease 0.8s both;
-      }
-
-      @keyframes summaryFade {
-        from { opacity: 0; transform: translateY(10px); }
-        to { opacity: 1; transform: translateY(0); }
-      }
-
-      .ipq-info-text {
-        font-size: 13px;
-        color: #9ca3af;
-        line-height: 1.6;
-        animation: infoFade 0.6s ease 1s both;
-      }
-
-      .ipq-info-highlight {
-        color: var(--ipq-color);
-        font-weight: 600;
-      }
-
-      @keyframes infoFade {
-        from { opacity: 0; }
-        to { opacity: 1; }
-      }
-
-      /* Responsive */
-      @media (max-width: 480px) {
-        .ipq-modal { max-width: 95vw; }
-        .ipq-status-circle { width: 140px; height: 140px; }
-        .ipq-status-text { font-size: 16px; }
-        .ipq-risk-score { font-size: 28px; }
-      }
-    </style>
-    <div class="ipq-modal">
-      <main class="ipq-main">
-        <!-- Central Status Circle -->
-        <div class="ipq-status-circle">
-          <div class="ipq-status-text">${statusText}</div>
-          <div class="ipq-risk-score">${risk}</div>
-        </div>
-
-        <!-- Simple Clean Checklist -->
-        <div class="ipq-checklist">${checklistHTML}</div>
-
-        <!-- Clean Footer -->
-        <footer class="ipq-footer">
-          <div class="ipq-summary">${statusMessage}</div>
-          <div class="ipq-info-text">
-            <span class="ipq-info-highlight">${ip}</span> • ${flag} ${city ? city+', ' : ''}${cc} • ${isp || 'Unknown ISP'}
-          </div>
-        </footer>
-      </main>
-    </div>`;
-
   const modal = createStyledModal(`${headerIcon} IP Qualification`, html);
-  modal.querySelector('.styled-modal-content').classList.add(statusClass);
+  const shell = modal.querySelector('.styled-modal-content');
+  shell.classList.add('ipq-shell', statusClass);
+
+  const copyBtn = modal.querySelector('.ipq-copy-btn');
+  if (copyBtn && copyBtn.dataset.copy) {
+    const original = copyBtn.innerHTML;
+    copyBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(copyBtn.dataset.copy);
+        copyBtn.classList.remove('error');
+        copyBtn.classList.add('copied');
+        copyBtn.innerHTML = `${checkCompactSVG}<span>Copied</span>`;
+        setTimeout(() => {
+          copyBtn.classList.remove('copied');
+          copyBtn.innerHTML = original;
+        }, 1600);
+      } catch (err) {
+        copyBtn.classList.remove('copied');
+        copyBtn.classList.add('error');
+        copyBtn.innerHTML = `<span>Copy failed</span>`;
+        setTimeout(() => {
+          copyBtn.classList.remove('error');
+          copyBtn.innerHTML = original;
+        }, 1600);
+      }
+    });
+  }
 }
+
