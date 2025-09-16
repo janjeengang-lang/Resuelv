@@ -4547,9 +4547,12 @@ chrome.storage.onChanged.addListener((chg, area) => {
 });
 
 // Clean Professional IP Qualification Modal
-function showCleanIPQualificationModal(data){
-  if(!data){
-    createStyledModal('IP Qualification', `<div style="padding:20px;text-align:center;color:#e2e8f0;">Could not fetch IP data. Please try again.</div>`);
+function showCleanIPQualificationModal(data) {
+  if (!data) {
+    createStyledModal(
+      'IP Qualification',
+      `<div style="padding:20px;text-align:center;color:#e2e8f0;">Could not fetch IP data. Please try again.</div>`
+    );
     return;
   }
 
@@ -4558,31 +4561,35 @@ function showCleanIPQualificationModal(data){
   const city = data.city || data.region_name || data.region || '';
   const cc = (data.country_code || data.countryCode || data.country_code2 || '').toUpperCase();
   const isp = data.isp || data.org || '';
-  const flag = cc ? cc.replace(/./g, ch => String.fromCodePoint(127397 + ch.charCodeAt(0))) : '';
+  const flag = cc ? cc.replace(/./g, (ch) => String.fromCodePoint(127397 + ch.charCodeAt(0))) : '';
 
   const detection = data?.blacklists?.detection || 'none';
+  const detectionEngines = Array.isArray(data?.blacklists?.engines)
+    ? data.blacklists.engines
+        .filter((engine) => engine?.listed)
+        .map((engine) => engine?.name || engine?.engine)
+        .filter(Boolean)
+    : [];
   const proxy = !!data?.security?.proxy;
   const vpn = !!data?.security?.vpn;
   const tor = !!data?.security?.tor;
 
-  // Enhanced status logic with three states
   const riskPass = risk < 30;
   const riskWarning = risk >= 30 && risk <= 50;
   const riskFail = risk > 50;
-  const blacklistPass = detection === 'none';
+  const blacklistPass = detection === 'none' && detectionEngines.length === 0;
   const anonymityPass = !proxy && !vpn && !tor;
 
-  // Determine overall status
   let statusState = 'qualified';
-  let statusText = 'QUALIFIED';
+  let statusText = 'Qualified';
   let statusMessage = 'Your IP is clean and ready to use.';
   let statusClass = 'status-qualified';
 
   if (riskFail || !blacklistPass || !anonymityPass) {
     statusState = 'not-qualified';
-    statusText = 'NOT QUALIFIED';
+    statusText = 'Not Qualified';
     statusClass = 'status-not-qualified';
-    
+
     if (riskFail) {
       statusMessage = 'Warning: This IP is high-risk and has a bad reputation. It is not recommended for use.';
     } else if (!blacklistPass) {
@@ -4592,292 +4599,470 @@ function showCleanIPQualificationModal(data){
     }
   } else if (riskWarning) {
     statusState = 'warning';
-    statusText = 'WARNING';
+    statusText = 'Warning';
     statusClass = 'status-warning';
     statusMessage = 'Your IP is moderately risky. Proceed with caution.';
   }
 
-  // SVG Icons
   const shieldSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`;
   const eyeSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>`;
   const globeSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`;
-  
-  // Status-specific icons
-  const checkSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="check-icon"><polyline points="20 6 9 17 4 12"/></svg>`;
-  const warningSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="warning-icon"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="m12 17 .01 0"/></svg>`;
-  const xSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="x-icon"><path d="M18 6 6 18M6 6l12 12"/></svg>`;
+  const copySVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`;
 
-  // Build clean checklist
+  const checkSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+  const warningSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="m12 17 .01 0"/></svg>`;
+  const xSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>`;
+  const checkCompactSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+
+  const detectionSources = detectionEngines.length
+    ? detectionEngines
+    : detection !== 'none' && detection
+      ? [detection]
+      : [];
+  const formattedSources = detectionSources
+    .map((src) => src.replace(/[_-]+/g, ' '))
+    .map((src) => src.replace(/\b\w/g, (ch) => ch.toUpperCase()));
+
+  const riskDetail = riskFail
+    ? `High risk score detected • ${risk}/100`
+    : riskWarning
+      ? `Moderate risk profile • ${risk}/100`
+      : `Low risk score • ${risk}/100`;
+  const blacklistDetail = blacklistPass
+    ? 'No blacklist matches detected'
+    : `Listed on ${formattedSources.join(', ') || 'reported sources'}`;
+  const anonymityFlags = [];
+  if (proxy) anonymityFlags.push('Proxy');
+  if (vpn) anonymityFlags.push('VPN');
+  if (tor) anonymityFlags.push('Tor');
+  const anonymityDetail = anonymityPass
+    ? 'No proxy, VPN or Tor activity detected'
+    : `Detected: ${anonymityFlags.join(', ') || 'Anonymity services'}`;
+
   const checks = [
-    { 
-      pass: riskPass, 
-      warning: riskWarning,
-      fail: riskFail,
-      label: 'Risk Score Assessment', 
-      icon: shieldSVG 
+    {
+      key: 'risk',
+      label: 'Risk Score Assessment',
+      detail: riskDetail,
+      state: riskFail ? 'fail' : riskWarning ? 'warn' : 'pass',
+      icon: shieldSVG
     },
-    { 
-      pass: blacklistPass, 
-      warning: false,
-      fail: !blacklistPass,
-      label: 'Blacklist Verification', 
-      icon: eyeSVG 
+    {
+      key: 'blacklist',
+      label: 'Blacklist Verification',
+      detail: blacklistDetail,
+      state: blacklistPass ? 'pass' : 'fail',
+      icon: eyeSVG
     },
-    { 
-      pass: anonymityPass, 
-      warning: false,
-      fail: !anonymityPass,
-      label: 'Anonymity Detection', 
-      icon: globeSVG 
-    },
+    {
+      key: 'anonymity',
+      label: 'Anonymity Detection',
+      detail: anonymityDetail,
+      state: anonymityPass ? 'pass' : 'fail',
+      icon: globeSVG
+    }
   ];
 
-  const checklistHTML = checks
-    .map((c, i) => {
-      let resultIcon = checkSVG;
-      let resultClass = 'check-result-pass';
-      
-      if (c.fail) {
-        resultIcon = xSVG;
-        resultClass = 'check-result-fail';
-      } else if (c.warning) {
-        resultIcon = warningSVG;
-        resultClass = 'check-result-warning';
-      }
-      
+  const stateBadges = {
+    pass: { label: 'Passed', icon: checkSVG },
+    warn: { label: 'Attention', icon: warningSVG },
+    fail: { label: 'Failed', icon: xSVG }
+  };
+
+  const checkHTML = checks
+    .map((item) => {
+      const badge = stateBadges[item.state];
       return `
-      <div class="ipq-check-item ${resultClass}" style="--i:${i};">
-        <div class="ipq-check-left">${c.icon}<span>${c.label}</span></div>
-        <div class="ipq-check-result">${resultIcon}</div>
-      </div>`;
+        <div class="ipq-check-card ipq-${item.state}">
+          <div class="ipq-check-left">
+            <div class="ipq-check-icon">${item.icon}</div>
+            <div class="ipq-check-titles">
+              <span class="ipq-check-title">${item.label}</span>
+              <span class="ipq-check-detail">${item.detail}</span>
+            </div>
+          </div>
+          <div class="ipq-check-status">${badge.icon}<span>${badge.label}</span></div>
+        </div>`;
     })
     .join('');
 
-  // Header icons based on status
+  const locationParts = [city, cc].filter(Boolean).join(', ');
+  const locationDisplay = locationParts ? `${flag ? `${flag} ` : ''}${locationParts}` : 'Unknown';
+  const ispDisplay = isp || 'Unknown';
+
+  const html = `
+    <style>
+      #zepra-styled-modal .styled-modal-content.ipq-shell {
+        background: linear-gradient(180deg, rgba(15,23,42,0.95) 0%, rgba(11,15,25,0.92) 100%);
+        border: none;
+        border-radius: 20px;
+        box-shadow: 0 25px 50px -12px rgba(15,23,42,0.8);
+        max-width: 420px;
+        width: min(420px, 92vw);
+        overflow: hidden;
+      }
+      #zepra-styled-modal .ipq-shell {
+        --ipq-accent: #22c55e;
+        --ipq-accent-soft: rgba(34,197,94,0.2);
+        --ipq-accent-strong: rgba(34,197,94,0.35);
+      }
+      #zepra-styled-modal .ipq-shell.status-warning {
+        --ipq-accent: #f59e0b;
+        --ipq-accent-soft: rgba(245,158,11,0.18);
+        --ipq-accent-strong: rgba(245,158,11,0.32);
+      }
+      #zepra-styled-modal .ipq-shell.status-not-qualified {
+        --ipq-accent: #ef4444;
+        --ipq-accent-soft: rgba(239,68,68,0.18);
+        --ipq-accent-strong: rgba(239,68,68,0.32);
+      }
+      #zepra-styled-modal .ipq-shell .styled-modal-header {
+        background: linear-gradient(90deg, rgba(148,163,184,0.14), rgba(148,163,184,0));
+        border-bottom: 1px solid rgba(148,163,184,0.18);
+        padding: 18px 22px;
+      }
+      #zepra-styled-modal .ipq-shell .styled-modal-header h3 {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin: 0;
+        color: #f8fafc;
+        font-size: 17px;
+        font-weight: 700;
+      }
+      #zepra-styled-modal .ipq-shell .styled-modal-header svg {
+        width: 22px;
+        height: 22px;
+        stroke: var(--ipq-accent);
+        color: var(--ipq-accent);
+      }
+      #zepra-styled-modal .ipq-shell .styled-modal-close {
+        color: #94a3b8;
+        border-radius: 10px;
+      }
+      #zepra-styled-modal .ipq-shell .styled-modal-close:hover {
+        background: rgba(148,163,184,0.16);
+        color: #e2e8f0;
+      }
+      #zepra-styled-modal .ipq-shell .styled-modal-body {
+        padding: 1.5rem;
+        background: radial-gradient(circle at top, rgba(30,41,59,0.65), rgba(15,23,42,0.92));
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+        max-height: 65vh;
+        overflow-y: auto;
+      }
+      #zepra-styled-modal .ipq-shell .styled-modal-body::-webkit-scrollbar {
+        width: 6px;
+      }
+      #zepra-styled-modal .ipq-shell .styled-modal-body::-webkit-scrollbar-thumb {
+        background: rgba(148,163,184,0.35);
+        border-radius: 999px;
+      }
+      .ipq-status-card {
+        background: rgba(15,23,42,0.55);
+        border: 1px solid rgba(148,163,184,0.2);
+        border-radius: 1rem;
+        padding: 1.2rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        box-shadow: inset 0 0 0 1px rgba(15,23,42,0.35);
+      }
+      .ipq-status-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+      .ipq-status-head {
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+        min-width: 0;
+      }
+      .ipq-status-label {
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        letter-spacing: 0.14em;
+        font-weight: 600;
+        color: var(--ipq-accent);
+      }
+      .ipq-status-message {
+        margin: 0;
+        color: #e2e8f0;
+        font-size: 0.92rem;
+        line-height: 1.45;
+      }
+      .ipq-risk-block {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 0.25rem;
+        min-width: 0;
+      }
+      .ipq-risk-caption {
+        font-size: 0.72rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: #94a3b8;
+      }
+      .ipq-risk-value {
+        font-size: 2.6rem;
+        font-weight: 700;
+        color: var(--ipq-accent);
+        font-family: 'Fira Code', 'SFMono-Regular', Menlo, Consolas, monospace;
+        line-height: 1;
+      }
+      .ipq-meta-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 0.75rem;
+      }
+      .ipq-meta-card {
+        background: rgba(15,23,42,0.5);
+        border: 1px solid rgba(148,163,184,0.18);
+        border-radius: 0.9rem;
+        padding: 0.85rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        min-width: 0;
+      }
+      .ipq-meta-card.ipq-span {
+        grid-column: span 2;
+      }
+      .ipq-meta-label {
+        font-size: 0.72rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: #94a3b8;
+      }
+      .ipq-meta-row {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+      .ipq-meta-value {
+        color: #f8fafc;
+        font-weight: 600;
+        word-break: break-word;
+      }
+      .ipq-ip-value {
+        font-family: 'Fira Code', 'SFMono-Regular', Menlo, Consolas, monospace;
+        font-size: 1.1rem;
+        color: var(--ipq-accent);
+      }
+      .ipq-copy-btn {
+        margin-left: auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        font-size: 0.75rem;
+        background: rgba(148,163,184,0.12);
+        border: 1px solid rgba(148,163,184,0.28);
+        color: #e2e8f0;
+        padding: 0.35rem 0.6rem;
+        border-radius: 999px;
+        cursor: pointer;
+        transition: background 0.2s ease, color 0.2s ease;
+      }
+      .ipq-copy-btn:hover {
+        background: rgba(148,163,184,0.24);
+      }
+      .ipq-copy-btn svg {
+        width: 14px;
+        height: 14px;
+      }
+      .ipq-copy-btn.copied {
+        background: var(--ipq-accent-soft);
+        border-color: var(--ipq-accent);
+        color: var(--ipq-accent);
+      }
+      .ipq-copy-btn.error {
+        background: rgba(239,68,68,0.18);
+        border-color: rgba(239,68,68,0.4);
+        color: #f87171;
+      }
+      .ipq-check-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+      .ipq-check-card {
+        background: rgba(15,23,42,0.48);
+        border: 1px solid rgba(148,163,184,0.16);
+        border-radius: 0.9rem;
+        padding: 0.95rem 1rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        min-width: 0;
+      }
+      .ipq-check-left {
+        display: flex;
+        align-items: center;
+        gap: 0.8rem;
+        min-width: 0;
+      }
+      .ipq-check-icon {
+        width: 34px;
+        height: 34px;
+        border-radius: 0.8rem;
+        background: rgba(148,163,184,0.12);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+      .ipq-check-icon svg {
+        width: 18px;
+        height: 18px;
+        stroke-width: 2;
+      }
+      .ipq-check-titles {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+        min-width: 0;
+      }
+      .ipq-check-title {
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: #f8fafc;
+      }
+      .ipq-check-detail {
+        color: #94a3b8;
+        font-size: 0.82rem;
+        line-height: 1.35;
+      }
+      .ipq-check-status {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        font-weight: 600;
+        font-size: 0.85rem;
+        flex-shrink: 0;
+      }
+      .ipq-check-status svg {
+        width: 18px;
+        height: 18px;
+      }
+      .ipq-check-card.ipq-pass .ipq-check-icon {
+        background: var(--ipq-accent-soft);
+        color: var(--ipq-accent);
+      }
+      .ipq-check-card.ipq-pass .ipq-check-status {
+        color: var(--ipq-accent);
+      }
+      .ipq-check-card.ipq-warn .ipq-check-icon {
+        background: rgba(245,158,11,0.18);
+        color: #f59e0b;
+      }
+      .ipq-check-card.ipq-warn .ipq-check-status {
+        color: #f59e0b;
+      }
+      .ipq-check-card.ipq-fail .ipq-check-icon {
+        background: rgba(239,68,68,0.18);
+        color: #ef4444;
+      }
+      .ipq-check-card.ipq-fail .ipq-check-status {
+        color: #ef4444;
+      }
+      .ipq-footer-note {
+        font-size: 0.75rem;
+        color: #64748b;
+        text-align: center;
+      }
+      @media (max-width: 520px) {
+        #zepra-styled-modal .ipq-shell .styled-modal-body {
+          padding: 1.25rem;
+        }
+        .ipq-status-top {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+        .ipq-risk-block {
+          align-items: flex-start;
+        }
+        .ipq-meta-card.ipq-span {
+          grid-column: span 1;
+        }
+      }
+    </style>
+    <div class="ipq-body">
+      <section class="ipq-status-card">
+        <div class="ipq-status-top">
+          <div class="ipq-status-head">
+            <span class="ipq-status-label">${statusText.toUpperCase()}</span>
+            <p class="ipq-status-message">${statusMessage}</p>
+          </div>
+          <div class="ipq-risk-block">
+            <span class="ipq-risk-caption">Risk Score</span>
+            <span class="ipq-risk-value">${risk}</span>
+          </div>
+        </div>
+      </section>
+      <section class="ipq-meta-grid">
+        <div class="ipq-meta-card ipq-span">
+          <div class="ipq-meta-label">IP Address</div>
+          <div class="ipq-meta-row">
+            <span class="ipq-meta-value ipq-ip-value">${ip || 'Unknown'}</span>
+            ${ip ? `<button class="ipq-copy-btn" data-copy="${ip}">${copySVG}<span>Copy</span></button>` : ''}
+          </div>
+        </div>
+        <div class="ipq-meta-card">
+          <div class="ipq-meta-label">Location</div>
+          <div class="ipq-meta-value">${locationDisplay}</div>
+        </div>
+        <div class="ipq-meta-card">
+          <div class="ipq-meta-label">ISP</div>
+          <div class="ipq-meta-value">${ispDisplay}</div>
+        </div>
+      </section>
+      <section class="ipq-check-grid">${checkHTML}</section>
+      <p class="ipq-footer-note">Scores are provided by ip-score.com and refreshed on each request.</p>
+    </div>`;
+
   const shieldCheckSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>`;
   const shieldWarningSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 7v6"/><path d="m12 17 .01 0"/></svg>`;
   const shieldOffSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 9l6 6M15 9l-6 6"/></svg>`;
-  
+
   let headerIcon = shieldCheckSVG;
   if (statusState === 'warning') headerIcon = shieldWarningSVG;
   else if (statusState === 'not-qualified') headerIcon = shieldOffSVG;
 
-  const html = `
-    <style>
-      /* Clean professional IP Qualification Modal */
-      .styled-modal-content.status-qualified { --ipq-color: #4ade80; }
-      .styled-modal-content.status-warning { --ipq-color: #fbbf24; }
-      .styled-modal-content.status-not-qualified { --ipq-color: #f43f5e; }
-      
-      /* Remove modal border and create clean look */
-      .styled-modal-content {
-        border: none !important;
-        box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5) !important;
-        background: rgba(20, 30, 48, 0.95) !important;
-        backdrop-filter: blur(20px) !important;
-      }
-
-      .ipq-modal {
-        position: relative;
-        max-width: 400px;
-        padding: 0;
-        background: transparent;
-        border: none;
-      }
-
-      .ipq-main {
-        padding: 32px 24px;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 32px;
-      }
-
-      /* Central Status Circle - Main Visual Element */
-      .ipq-status-circle {
-        position: relative;
-        width: 160px;
-        height: 160px;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        border: 3px solid var(--ipq-color);
-        border-radius: 50%;
-        background: rgba(0, 0, 0, 0.4);
-        box-shadow: 
-          0 0 30px var(--ipq-color),
-          inset 0 0 30px rgba(0, 0, 0, 0.5);
-        animation: circleGlow 2s ease-in-out infinite alternate;
-      }
-
-      @keyframes circleGlow {
-        from { 
-          box-shadow: 
-            0 0 30px var(--ipq-color),
-            inset 0 0 30px rgba(0, 0, 0, 0.5);
-        }
-        to { 
-          box-shadow: 
-            0 0 50px var(--ipq-color),
-            0 0 80px var(--ipq-color),
-            inset 0 0 30px rgba(0, 0, 0, 0.5);
-        }
-      }
-
-      .ipq-status-text {
-        font-size: 18px;
-        font-weight: 800;
-        color: var(--ipq-color);
-        text-shadow: 0 0 10px var(--ipq-color);
-        letter-spacing: 1px;
-        margin-bottom: 4px;
-      }
-
-      .ipq-risk-score {
-        font-size: 36px;
-        font-weight: 900;
-        color: var(--ipq-color);
-        text-shadow: 0 0 15px var(--ipq-color);
-        font-family: 'Courier New', monospace;
-      }
-
-      /* Simple Clean Checklist - No Boxes */
-      .ipq-checklist {
-        width: 100%;
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-        margin-top: 8px;
-      }
-
-      .ipq-check-item {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 12px 0;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        animation: itemFadeIn 0.5s ease forwards;
-        opacity: 0;
-        animation-delay: calc(var(--i) * 0.1s + 0.3s);
-      }
-
-      .ipq-check-item:last-child {
-        border-bottom: none;
-      }
-
-      @keyframes itemFadeIn {
-        from { opacity: 0; transform: translateY(10px); }
-        to { opacity: 1; transform: translateY(0); }
-      }
-
-      .ipq-check-left {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-      }
-
-      .ipq-check-left svg {
-        width: 18px;
-        height: 18px;
-        stroke: #9ca3af;
-      }
-
-      .ipq-check-left span {
-        font-size: 14px;
-        font-weight: 500;
-        color: #e2e8f0;
-      }
-
-      .ipq-check-result svg {
-        width: 20px;
-        height: 20px;
-      }
-
-      /* Status Icons with Colors */
-      .check-result-pass .check-icon {
-        stroke: var(--ipq-color);
-        filter: drop-shadow(0 0 6px var(--ipq-color));
-      }
-
-      .check-result-warning .warning-icon {
-        stroke: var(--ipq-color);
-        fill: var(--ipq-color);
-        filter: drop-shadow(0 0 6px var(--ipq-color));
-      }
-
-      .check-result-fail .x-icon {
-        stroke: var(--ipq-color);
-        filter: drop-shadow(0 0 6px var(--ipq-color));
-      }
-
-      /* Clean Footer - Simple Text */
-      .ipq-footer {
-        width: 100%;
-        text-align: center;
-        margin-top: 24px;
-      }
-
-      .ipq-summary {
-        font-size: 14px;
-        font-weight: 600;
-        color: var(--ipq-color);
-        text-shadow: 0 0 8px var(--ipq-color);
-        margin-bottom: 16px;
-        animation: summaryFade 0.6s ease 0.8s both;
-      }
-
-      @keyframes summaryFade {
-        from { opacity: 0; transform: translateY(10px); }
-        to { opacity: 1; transform: translateY(0); }
-      }
-
-      .ipq-info-text {
-        font-size: 13px;
-        color: #9ca3af;
-        line-height: 1.6;
-        animation: infoFade 0.6s ease 1s both;
-      }
-
-      .ipq-info-highlight {
-        color: var(--ipq-color);
-        font-weight: 600;
-      }
-
-      @keyframes infoFade {
-        from { opacity: 0; }
-        to { opacity: 1; }
-      }
-
-      /* Responsive */
-      @media (max-width: 480px) {
-        .ipq-modal { max-width: 95vw; }
-        .ipq-status-circle { width: 140px; height: 140px; }
-        .ipq-status-text { font-size: 16px; }
-        .ipq-risk-score { font-size: 28px; }
-      }
-    </style>
-    <div class="ipq-modal">
-      <main class="ipq-main">
-        <!-- Central Status Circle -->
-        <div class="ipq-status-circle">
-          <div class="ipq-status-text">${statusText}</div>
-          <div class="ipq-risk-score">${risk}</div>
-        </div>
-
-        <!-- Simple Clean Checklist -->
-        <div class="ipq-checklist">${checklistHTML}</div>
-
-        <!-- Clean Footer -->
-        <footer class="ipq-footer">
-          <div class="ipq-summary">${statusMessage}</div>
-          <div class="ipq-info-text">
-            <span class="ipq-info-highlight">${ip}</span> • ${flag} ${city ? city+', ' : ''}${cc} • ${isp || 'Unknown ISP'}
-          </div>
-        </footer>
-      </main>
-    </div>`;
-
   const modal = createStyledModal(`${headerIcon} IP Qualification`, html);
-  modal.querySelector('.styled-modal-content').classList.add(statusClass);
+  const shell = modal.querySelector('.styled-modal-content');
+  shell.classList.add('ipq-shell', statusClass);
+
+  const copyBtn = modal.querySelector('.ipq-copy-btn');
+  if (copyBtn && copyBtn.dataset.copy) {
+    const original = copyBtn.innerHTML;
+    copyBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(copyBtn.dataset.copy);
+        copyBtn.classList.remove('error');
+        copyBtn.classList.add('copied');
+        copyBtn.innerHTML = `${checkCompactSVG}<span>Copied</span>`;
+        setTimeout(() => {
+          copyBtn.classList.remove('copied');
+          copyBtn.innerHTML = original;
+        }, 1600);
+      } catch (err) {
+        copyBtn.classList.remove('copied');
+        copyBtn.classList.add('error');
+        copyBtn.innerHTML = `<span>Copy failed</span>`;
+        setTimeout(() => {
+          copyBtn.classList.remove('error');
+          copyBtn.innerHTML = original;
+        }, 1600);
+      }
+    });
+  }
 }
+
