@@ -1,11 +1,44 @@
 // Modern Options.js - Complete Rewrite
+
+const LOCAL_DEFAULT_PLANNER_TEMPLATE = [
+  "You are Zepra's survey automation planner. You see a DOM snapshot of a survey page and a short history of executed actions.",
+  'Plan ONLY the next action needed to progress towards completing the survey.',
+  '',
+  '{{GOAL_SECTION}}',
+  '',
+  'Allowed action types:',
+  '{{ALLOWED_ACTIONS}}',
+  '',
+  'Response format:',
+  '{{FORMAT_GUIDE}}',
+  '',
+  'Rules:',
+  '{{RULES}}',
+  '',
+  'DOM summary:',
+  '{{DOM_SUMMARY}}',
+  '',
+  'Recent history:',
+  '{{HISTORY}}',
+  '',
+  'Respond with the JSON schema shown above.{{EXTRA_INSTRUCTIONS}}'
+].join('\n');
+
+const DEFAULT_AGENT_SETTINGS = {
+  baseUrl: 'https://api.cerebras.ai/v1',
+  timeoutSeconds: 60,
+  temperature: 0.2,
+  maxTokens: 1024
+};
+
 class ModernOptionsManager {
   constructor() {
     this.currentSection = 'theme-api';
     this.hasUnsavedChanges = false;
     this.originalValues = {};
     this.editingPromptId = null;
-    
+    this.defaultPlannerTemplate = null;
+
     this.initializeElements();
     this.bindEvents();
     this.loadSettings();
@@ -31,6 +64,10 @@ class ModernOptionsManager {
       primaryColor: document.getElementById('primaryColor'),
       cerebrasKey: document.getElementById('cerebrasKey'),
       cerebrasModel: document.getElementById('cerebrasModel'),
+      cerebrasBaseUrl: document.getElementById('cerebrasBaseUrl'),
+      cerebrasTimeout: document.getElementById('cerebrasTimeout'),
+      cerebrasTemperature: document.getElementById('cerebrasTemperature'),
+      cerebrasMaxTokens: document.getElementById('cerebrasMaxTokens'),
       ocrKey: document.getElementById('ocrKey'),
       ipdataKey: document.getElementById('ipdataKey'),
       testIpdata: document.getElementById('testIpdata'),
@@ -38,9 +75,11 @@ class ModernOptionsManager {
       showReasoning: document.getElementById('showReasoning'),
       reasonLang: document.getElementById('reasonLang'),
       ocrLang: document.getElementById('ocrLang'),
+      plannerPromptTemplate: document.getElementById('plannerPromptTemplate'),
+      resetPlannerTemplate: document.getElementById('resetPlannerTemplate'),
       webWidth: document.getElementById('webWidth'),
       webHeight: document.getElementById('webHeight'),
-      
+
       // Prompts
       promptForm: document.getElementById('promptForm'),
       promptName: document.getElementById('promptName'),
@@ -81,7 +120,8 @@ class ModernOptionsManager {
     // Specific actions
     this.elements.testIpdata?.addEventListener('click', () => this.testIpdataConnection());
     this.elements.primaryColor?.addEventListener('input', (e) => this.updateThemeColor(e.target.value));
-    
+    this.elements.resetPlannerTemplate?.addEventListener('click', () => this.resetPlannerTemplate());
+
     // Prompt management
     this.elements.savePrompt?.addEventListener('click', () => this.savePrompt());
     this.elements.cancelPrompt?.addEventListener('click', () => this.cancelPromptEdit());
@@ -96,14 +136,28 @@ class ModernOptionsManager {
   async loadSettings() {
     try {
       const settings = await chrome.storage.local.get([
-        'cerebrasApiKey', 'cerebrasModel', 'ocrApiKey', 'ipdataApiKey',
+        'cerebrasApiKey', 'cerebrasModel', 'cerebrasBaseUrl', 'cerebrasTimeoutMs',
+        'cerebrasTemperature', 'cerebrasMaxTokens', 'ocrApiKey', 'ipdataApiKey',
         'typingSpeed', 'ocrLang', 'customWebSize', 'primaryColor',
-        'showReasoning', 'reasonLang'
+        'showReasoning', 'reasonLang', 'surveyPlannerPromptTemplate'
       ]);
 
       // Populate form fields
       if (this.elements.cerebrasKey) this.elements.cerebrasKey.value = settings.cerebrasApiKey || '';
       if (this.elements.cerebrasModel) this.elements.cerebrasModel.value = settings.cerebrasModel || 'gpt-oss-120b';
+      if (this.elements.cerebrasBaseUrl) this.elements.cerebrasBaseUrl.value = settings.cerebrasBaseUrl || DEFAULT_AGENT_SETTINGS.baseUrl;
+      if (this.elements.cerebrasTimeout) {
+        const timeoutMs = Number.isFinite(settings.cerebrasTimeoutMs) ? settings.cerebrasTimeoutMs : DEFAULT_AGENT_SETTINGS.timeoutSeconds * 1000;
+        this.elements.cerebrasTimeout.value = Math.round(timeoutMs / 1000);
+      }
+      if (this.elements.cerebrasTemperature) {
+        const temp = Number.isFinite(settings.cerebrasTemperature) ? settings.cerebrasTemperature : DEFAULT_AGENT_SETTINGS.temperature;
+        this.elements.cerebrasTemperature.value = temp;
+      }
+      if (this.elements.cerebrasMaxTokens) {
+        const max = Number.isFinite(settings.cerebrasMaxTokens) ? settings.cerebrasMaxTokens : DEFAULT_AGENT_SETTINGS.maxTokens;
+        this.elements.cerebrasMaxTokens.value = max;
+      }
       if (this.elements.ocrKey) this.elements.ocrKey.value = settings.ocrApiKey || '';
       if (this.elements.ipdataKey) this.elements.ipdataKey.value = settings.ipdataApiKey || '';
       if (this.elements.typingSpeed) this.elements.typingSpeed.value = settings.typingSpeed || 'normal';
@@ -113,6 +167,12 @@ class ModernOptionsManager {
       if (this.elements.showReasoning) this.elements.showReasoning.checked = settings.showReasoning || false;
       if (this.elements.reasonLang) this.elements.reasonLang.value = settings.reasonLang || '';
       if (this.elements.primaryColor) this.elements.primaryColor.value = settings.primaryColor || '#39ff14';
+      if (this.elements.plannerPromptTemplate) {
+        const template = typeof settings.surveyPlannerPromptTemplate === 'string'
+          ? settings.surveyPlannerPromptTemplate
+          : await this.fetchDefaultPlannerTemplate();
+        this.elements.plannerPromptTemplate.value = template;
+      }
 
       // Apply theme
       if (settings.primaryColor) {
@@ -121,7 +181,7 @@ class ModernOptionsManager {
 
       // Store original values for change tracking
       this.storeOriginalValues();
-      
+
       // Load additional data
       await this.loadPrompts();
       await this.loadSites();
@@ -136,6 +196,10 @@ class ModernOptionsManager {
     this.originalValues = {
       cerebrasKey: this.elements.cerebrasKey?.value || '',
       cerebrasModel: this.elements.cerebrasModel?.value || '',
+      cerebrasBaseUrl: this.elements.cerebrasBaseUrl?.value || '',
+      cerebrasTimeout: this.elements.cerebrasTimeout?.value || '',
+      cerebrasTemperature: this.elements.cerebrasTemperature?.value || '',
+      cerebrasMaxTokens: this.elements.cerebrasMaxTokens?.value || '',
       ocrKey: this.elements.ocrKey?.value || '',
       ipdataKey: this.elements.ipdataKey?.value || '',
       typingSpeed: this.elements.typingSpeed?.value || '',
@@ -144,21 +208,23 @@ class ModernOptionsManager {
       webHeight: this.elements.webHeight?.value || '',
       showReasoning: this.elements.showReasoning?.checked || false,
       reasonLang: this.elements.reasonLang?.value || '',
-      primaryColor: this.elements.primaryColor?.value || ''
+      primaryColor: this.elements.primaryColor?.value || '',
+      plannerPromptTemplate: this.elements.plannerPromptTemplate?.value || ''
     };
   }
 
   trackFormChanges() {
     const formElements = [
-      this.elements.cerebrasKey, this.elements.cerebrasModel, this.elements.ocrKey,
-      this.elements.ipdataKey, this.elements.typingSpeed, this.elements.ocrLang,
+      this.elements.cerebrasKey, this.elements.cerebrasModel, this.elements.cerebrasBaseUrl,
+      this.elements.cerebrasTimeout, this.elements.cerebrasTemperature, this.elements.cerebrasMaxTokens,
+      this.elements.ocrKey, this.elements.ipdataKey, this.elements.typingSpeed, this.elements.ocrLang,
       this.elements.webWidth, this.elements.webHeight, this.elements.showReasoning,
-      this.elements.reasonLang, this.elements.primaryColor
+      this.elements.reasonLang, this.elements.primaryColor, this.elements.plannerPromptTemplate
     ];
 
     formElements.forEach(element => {
       if (!element) return;
-      
+
       const eventType = element.type === 'checkbox' ? 'change' : 'input';
       element.addEventListener(eventType, () => this.checkForChanges());
     });
@@ -168,6 +234,10 @@ class ModernOptionsManager {
     const currentValues = {
       cerebrasKey: this.elements.cerebrasKey?.value || '',
       cerebrasModel: this.elements.cerebrasModel?.value || '',
+      cerebrasBaseUrl: this.elements.cerebrasBaseUrl?.value || '',
+      cerebrasTimeout: this.elements.cerebrasTimeout?.value || '',
+      cerebrasTemperature: this.elements.cerebrasTemperature?.value || '',
+      cerebrasMaxTokens: this.elements.cerebrasMaxTokens?.value || '',
       ocrKey: this.elements.ocrKey?.value || '',
       ipdataKey: this.elements.ipdataKey?.value || '',
       typingSpeed: this.elements.typingSpeed?.value || '',
@@ -176,10 +246,11 @@ class ModernOptionsManager {
       webHeight: this.elements.webHeight?.value || '',
       showReasoning: this.elements.showReasoning?.checked || false,
       reasonLang: this.elements.reasonLang?.value || '',
-      primaryColor: this.elements.primaryColor?.value || ''
+      primaryColor: this.elements.primaryColor?.value || '',
+      plannerPromptTemplate: this.elements.plannerPromptTemplate?.value || ''
     };
 
-    const hasChanges = Object.keys(currentValues).some(key => 
+    const hasChanges = Object.keys(currentValues).some(key =>
       currentValues[key] !== this.originalValues[key]
     );
 
@@ -293,9 +364,26 @@ class ModernOptionsManager {
 
   async saveAllChanges() {
     try {
+      const timeoutSeconds = parseInt(this.elements.cerebrasTimeout?.value, 10);
+      const timeoutMs = Number.isFinite(timeoutSeconds) && timeoutSeconds > 0
+        ? timeoutSeconds * 1000
+        : DEFAULT_AGENT_SETTINGS.timeoutSeconds * 1000;
+      const rawTemperature = parseFloat(this.elements.cerebrasTemperature?.value);
+      const temperature = Number.isFinite(rawTemperature)
+        ? Math.min(Math.max(rawTemperature, 0), 2)
+        : DEFAULT_AGENT_SETTINGS.temperature;
+      const rawMaxTokens = parseInt(this.elements.cerebrasMaxTokens?.value, 10);
+      const maxTokens = Number.isFinite(rawMaxTokens) && rawMaxTokens > 0
+        ? rawMaxTokens
+        : DEFAULT_AGENT_SETTINGS.maxTokens;
+
       const settings = {
         cerebrasApiKey: this.elements.cerebrasKey?.value?.trim() || '',
         cerebrasModel: this.elements.cerebrasModel?.value || 'gpt-oss-120b',
+        cerebrasBaseUrl: this.elements.cerebrasBaseUrl?.value?.trim() || DEFAULT_AGENT_SETTINGS.baseUrl,
+        cerebrasTimeoutMs: timeoutMs,
+        cerebrasTemperature: temperature,
+        cerebrasMaxTokens: maxTokens,
         ocrApiKey: this.elements.ocrKey?.value?.trim() || '',
         ipdataApiKey: this.elements.ipdataKey?.value?.trim() || '',
         typingSpeed: this.elements.typingSpeed?.value || 'normal',
@@ -306,11 +394,12 @@ class ModernOptionsManager {
         },
         primaryColor: this.elements.primaryColor?.value || '#39ff14',
         showReasoning: this.elements.showReasoning?.checked || false,
-        reasonLang: this.elements.reasonLang?.value?.trim() || ''
+        reasonLang: this.elements.reasonLang?.value?.trim() || '',
+        surveyPlannerPromptTemplate: this.elements.plannerPromptTemplate?.value || ''
       };
 
       await chrome.storage.local.set(settings);
-      
+
       // Update original values
       this.storeOriginalValues();
       this.hasUnsavedChanges = false;
@@ -329,7 +418,7 @@ class ModernOptionsManager {
     Object.keys(this.originalValues).forEach(key => {
       const element = this.elements[key];
       if (!element) return;
-      
+
       if (element.type === 'checkbox') {
         element.checked = this.originalValues[key];
       } else {
@@ -339,10 +428,36 @@ class ModernOptionsManager {
 
     // Update theme
     this.updateThemeColor(this.originalValues.primaryColor);
-    
+
     this.hasUnsavedChanges = false;
     this.toggleSaveBar(false);
     this.showStatus('Changes reverted', 'info');
+  }
+
+  async fetchDefaultPlannerTemplate() {
+    if (this.defaultPlannerTemplate) {
+      return this.defaultPlannerTemplate;
+    }
+    try {
+      const response = await chrome.runtime.sendMessage({ type: 'SURVEY_AGENT_GET_DEFAULT_PROMPT_TEMPLATE' });
+      const template = typeof response?.template === 'string' && response.template.trim().length
+        ? response.template
+        : LOCAL_DEFAULT_PLANNER_TEMPLATE;
+      this.defaultPlannerTemplate = template;
+      return template;
+    } catch (error) {
+      console.warn('Failed to fetch default planner template, using local fallback.', error);
+      this.defaultPlannerTemplate = LOCAL_DEFAULT_PLANNER_TEMPLATE;
+      return this.defaultPlannerTemplate;
+    }
+  }
+
+  async resetPlannerTemplate() {
+    if (!this.elements.plannerPromptTemplate) return;
+    const template = await this.fetchDefaultPlannerTemplate();
+    this.elements.plannerPromptTemplate.value = template;
+    this.checkForChanges();
+    this.showStatus('Planner template reset to default', 'info');
   }
 
   // Prompt Management
