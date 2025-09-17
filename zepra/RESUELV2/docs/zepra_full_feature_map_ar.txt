@@ -1,0 +1,191 @@
+# خريطة تفصيلية لإضافة Zepra
+
+## 1. نظرة عامة سريعة
+- الامتداد مبني على Manifest V3، وملفه التعريفي موجود فى `manifest.json`. الملف بيحدد إن الـservice worker الرئيسي هو `background.js`، وبيحقن سكربت المحتوى `content.js` ومعاه أداة بناء الـDOM `src/dom/buildDomTree.js` فى كل الصفحات (all_frames=true).
+- كل الواجهات (البوب أب، صفحة الإعدادات، إدارة الهويات، سجل التصفح، نافذة الويب المخصص، نافذة التسجيل) موجودة جوه مجلد `zepra/RESUELV2/` بصيغة HTML + JS مستقلة، وبتسحب نفس ملفات الـCSS المشتركة (زَى `styles.css`, `theme.css`).
+- الأصول الرسومية والصوتية موجودة تحت `icons/` و`src/media/`، وفيه فيديوهات webm بتتكرر فى معظم الواجهات (مثل تأثير الزبرا المتحرك) وصوتيات للنقر/النجاح/التحميل.
+
+## 2. المكونات الخلفية (background.js)
+- **إدارة الجلسة:**
+  - الدالة `checkSession()` بتقيس عمر الجلسة (٣ ساعات) وبتجبر تسجيل الخروج عن طريق `forceLogout()` لما الوقت يخلص أو لو المستخدم مش مسجل دخول.
+  - `updatePopup()` و`updateContextMenu()` بيغيروا الـpopup الافتراضي (بين `login.html` و`popup.html`) وبيظهروا عنصر "Send to Zepra" فى الـcontext menu لما يكون المستخدم داخل.
+  - بيتعامل مع أحداث `onStartup`, `onInstalled`, و`storage.onChanged` علشان يثبت حالة الواجهة بعد إعادة تشغيل المتصفح أو تغيير التخزين.
+- **الاتصال بـCerebras:**
+  - الدالة `callCerebras(prompt)` بتقرأ الإعدادات (الموديل، الـtemperature، الـtimeout، الحد الأقصى للتوكنز، الـbase URL، المفتاح) من `chrome.storage.local` وبتبعت طلب `chat/completions`. فيها حراسة شديدة للأخطاء (429 Rate Limit، 401 Auth، timeout برسالة مخصصة) وبتنضف النص الراجع بفلتر `sanitize`.
+- **أوامر الـSurvey Agent:**
+  - يستورد `src/agent/actions.js` و`src/agent/planner.js`، وبيعرض الرسائل الآتية:
+    - `SURVEY_AGENT_REQUEST_DOM`: يبعت أمر للتاب الحالى يجيب snapshot من `buildDomTree`.
+    - `SURVEY_AGENT_EXECUTE_ACTION` / `SURVEY_AGENT_EXECUTE_BATCH`: يشغل أوامر النقر/الكتابة/الإسكروول على التاب، مع إرجاع حالة واضحة بكل خطأ.
+    - `SURVEY_AGENT_PLAN_NEXT`: يستدعى `surveyAgentPlanner.planNext` علشان يجيب خطوة واحدة من الـLLM.
+    - `SURVEY_AGENT_GET_DEFAULT_PROMPT_TEMPLATE`: بيرجع نص البرومبت الافتراضى علشان صفحة الإعدادات تقدر ترجع الإعدادات لأصلها.
+    - `SURVEY_AGENT_SAVE_HISTORY`: يخزن آخر ٢٥ جلسة استبيان فى `chrome.storage.local` تحت المفتاح `surveyAgentHistory`.
+- **خدمات OCR والتصوير:**
+  - `CAPTURE_AND_OCR`: بياخد Screenshot للتاب، يقص المنطقة المطلوبة بـOffscreenCanvas (أو يرجع للـcontent script لو ما ينفعش) وبعدين يبعت للصوت API `performOCR` (اللى بيستخدم OCR.space).
+  - `CAPTURE_FULL_PAGE_OCR`: بياخد القياسات من الصفحة كلها، يعمل Scroll ويصوّر كل جزء، وبعدين يدمج النصوص.
+- **خدمات الشبكة والـIP:**
+  - `GET_PUBLIC_IP`: بيدور بالتتابع على ipdata.co, ipapi, ipapi.co, وبعدين ipify كملاذ أخير. بيرجع IP، الدولة، المدينة، الـISP، إلخ.
+  - `GET_IP_QUALIFICATION`: بيجلب JSON كامل من ip-score.com ويبعته للواجهة.
+  - `TEST_IPDATA`: بيجرّب مفتاح ipdata من صفحة الإعدادات ويرجع النجاح/الفشل.
+- **المودالات والويب المخصص:**
+  - `OPEN_CUSTOM_WEB` و`OPEN_OR_FOCUS_CUSTOM_WEB`: بيفتح أو يركّز نافذة `custom_web.html`، مع تمرير عنوان الـtab الأصلى، واللينكات اللى هتتفتح جوه النافذة.
+  - `SHOW_NOTIFICATION`: يعمل إشعار `chrome.notifications` بسيط.
+- **المولدات والهوية:**
+  - `GENERATE_IDENTITY` و`GENERATE_COMPANY` بيستخدموا LLM عشان يولدوا بيانات JSON منظمة، مع إجبار على عدم توليد صور.
+  - `GENERATE_FAKE_INFO`: بيستخدم randomuser.me مع كاش ٥ دقايق.
+  - `GENERATE_REAL_ADDRESS`: بيبعت برومبت للـLLM يولد عنوان حقيقى مكوّن من Address1/2 + Zip.
+  - `ANALYZE_FORM`: يبعت HTML فورم للـLLM علشان يرجع Mapping selectors→حقول الهوية.
+- **وظائف مساعدة إضافية:**
+  - `fetchRandomUser`, `performOCR`, `cropImageInWorker`, `arrayBufferToBase64`, `getActiveTabId`، وغيرها مستخدمة فى سكربت المحتوى.
+
+## 3. سكربت المحتوى (content.js)
+- **حالة عامة:**
+  - الكائن `STATE` بيحتفظ بالـoverlay بتاع الـOCR، مودال الإجابات، فقاعة القائمة، آخر إجابة مكتوبة، حالة الهوية، وكمان حالة كاملة للـSurvey Agent (snapshotات، هايلايت، لوج، تشات، إعدادات، إلخ).
+  - بيلود إعدادات الوكيل من `chrome.storage.local` (`useIdentityAnswers`, `deliberateMode`) ويتابع تحديث الـUI لما المستخدم يغيرها من السايد بانل.
+- **جمع الـDOM:**
+  - `collectSurveyDomTree(options)` بيستدعى `buildDomTree`، يخزن النتائج فى كاش، ويضيف بيانات الهوية الجاهزة، قيم الحقول الحالية، ونتائج OCR لو الصور تكررت.
+  - كل Node بيتسجل فى `highlightLookup` عشان ممكن يتركب عليه هايلايت أخضر وقت التنفيذ.
+- **حلقة الوكيل:**
+  - `startSurveyAgentRun(goal, instructions)` بتبنى الحلقة: تجمع DOM → تبعت تاريخ الخطوات للـbackground علشان التخطيط → تنفّذ خطوة → تسجل لوج → تعيد لحد ما توصل `done` أو يحصل خطأ.
+  - فيه throttling ضد التكرار (`repeatPlanCount`, `rateLimitBackoffMs`) علشان أخطاء 429 اللى كانت بتحصل قبل كده.
+  - `logSurveyAgentEvent` بيسجّل رسالة فى التشات (شكل فقاعة Nano) مع الأنواع المختلفة: agent, operator, system, plan, error.
+  - بعد النجاح بيبعت سجل كامل للـbackground (`SURVEY_AGENT_SAVE_HISTORY`) يتضمن وقت البدء/النهاية، الأسئلة اللى اتجاوبت، والسياق.
+- **واجهة الوكيل:**
+  - `createSurveyAgentPanel()` بيعمل سايد بانل منزلق من اليمين بنفس ستايل Nanobrowser: header فيه الحالة (Idle/Running/Error)، زر Start/Stop، Toggle لـIdentity Autofill & Deliberate Mode، ومربع تشات.
+  - الجزء السفلى فيه input للمستخدم، وزرار "Send" بيبعت رسالة للتخطيط وبيبدأ الجلسة تلقائى لو الوكيل متوقف.
+  - الرسائل بتظهر على هيئة فقاعات بأفاتار المستخدم/الوكيل، مع ألوان مختلفة للأخطاء والتحذيرات.
+- **الفقاعة والقائمة الجانبية:**
+  - `createFloatingBubble()` بيضيف دائرة متحركة (فيديو زيبرا + Glow أخضر/أصفر) بتتسحب بالموس، وبتتذكر مكانها فى `chrome.storage.local`.
+  - الضغط عليها يفتح `showBubbleMenu()` (سايدبار بعرض ٣٦٠px بخلفية زجاجية، particles، header فيه زر قفل). العناصر المتاحة:
+    1. OCR Capture (تحديد جزء) & OCR Full Page.
+    2. Write Last Answer (تكتب آخر نتيجة LLM فى الحقل الحالى).
+    3. Survey Agent (يفتح السايد بانل الجديد).
+    4. Clear AI Context (يمسح ذاكرة الأسئلة فى التخزين).
+    5. IP Information, IP Qualification.
+    6. Generate Fake Info, Temp Mail (بيفتح custom web على fakemail).
+    7. Custom Web browser, AI Humanizer.
+    8. Generate Real Address, Generate Company Info.
+    9. Identity Panel (يعرض الهوية النشطة على الصفحة).
+    10. Zebra VPS (قائمة الكلاود سيشنز المختلفة).
+- **مودالات وأدوات UI داخل الصفحة:**
+  - `createRainbowModal()` هو مودال الإجابة الأساسى: خلفية شفافة + card زجاجى، العنوان "Zepra Answer"، وعند تفعيل خيار "عرض التفسير" بيتحول التصميم لشاشتين (Answer + Reason) كل واحدة فى بطاقة بلون مختلف مع زر Copy مستقل.
+    - الفوتر فيه أزرار: Write Here (يكتب فى الحقل النشط)، Write All (يكتب على كل الحقول اللى متلائمة)، Copy، AI Humanizer (يفتح موقع الكتابة البشرية)، Use Custom Prompt (يختار برومبت محفوظ).
+  - `showOverlayAndSelect()` بيضيف overlay شفاف علشان المستخدم يسحب مستطيل لـOCR، وبعد ما يختار بيرجع الإحداثيات.
+  - `showCleanIPQualificationModal(data)` بيبنى نافذة card بدون border خارجية، فيها دائرة خطر متدرجة، Checklist من عناصر مثل (Blacklist, VPN, Proxy, Tor, Cloud Provider)، وثلاث كروت للـIP/Location/ISP.
+  - `showIPModal(info)` مودال تفاعلى يعرض الـIP، Location، Postal، Timezone، ISP مع زر Copy بيتحول `Copied!`.
+  - `showFakeInfoModal()`: مودال ضخم فيه Tabs للبيانات الشخصية، التواصل، العنوان، الشركة. يتيح اختيار الجنس والـNationality، ويعرض معلومات randomuser. فيه زر Copy لكل عنصر.
+  - `showRealAddressModal()`: مودال بسيط يسأل عن Country/State/City، يجيب عنوان حقيقى من الـLLM، يوزع البيانات فى Inputs مع زر Copy.
+  - `showCompanyInfoModal()`: card Business فيها اسم، صناعة، حجم الشركة، الإيراد، موقع إلكترونى، عنوان، مع زر Copy.
+  - `showIdentityPanel()` يعرض الهوية النشطة فى card فى الصفحة نفسها (بدون الرجوع لصفحة identities).
+  - `showZebraVPSModal()` فيه تلات كروت (Windows trial, Android 6H, Android Pixel) وعند الضغط بيفتح نافذة custom web باللينكات المناسبة.
+  - مودال Temp Mail بيفتح custom web بنفس الشكل.
+- **التفاعل مع الحقول:**
+  - `typeIntoFocusedElement(text, options)` بيكتب حرف حرف بسرعة شبه بشرية (fast/normal/slow) وبيطلق Events (keydown, input, keyup, change) عشان الصفحات تلتقط القيمة.
+  - `fillForm(form)` و`analyzeFormWithAI(form)` بيملاوا الفورم بالهوية الحالية أو بالـmapping الراجع من الـLLM.
+  - `detectField(el)` بيحاول يتعرف على نوع الحقل من خلال الـname/id/placeholder ويطابقه مع مفاتيح الهوية (email, fullName, address...)
+  - فيه مراقبة مستمرة لـfocus علشان يخزن `STATE.lastFocused` للكتابة التلقائية.
+- **رسائل من الخلفية:**
+  - بيسمع `TYPE_TEXT`, `START_OCR_SELECTION`, `CROP_IMAGE_IN_CONTENT`, `SHOW_ZEPRA_MODAL`, `SCROLL_TO`, `GET_PAGE_DIMENSIONS`, بجانب رسائل الوكيل.
+  - فيه أمر `PING` بيرجع {ok:true} علشان يتأكد إن المحتوى محمل.
+- **Features إضافية:**
+  - تخزين آخر إجابة فى `STATE.currentAnswer` علشان تقدر تستخدم "Write Last Answer" حتى بعد إغلاق المودال.
+  - لما تستخرج OCR، النتيجة بتتخزن فى preview داخل البوب أب.
+  - لو المستخدم فعل خيار "Show Reasoning" من الإعدادات، المودال هيعرض reasoning Pane تلقائى وتتحول أزرار النسخ.
+
+## 4. واجهة تسجيل الدخول (login.html / login.js)
+- خلفية عبارة عن فيديو متغير (`zepra.webm` أو `carry.webm`) داخل عنصر `headerWrap`، بيتبدل بإنسياب عند نجاح/فشل التسجيل (`switchHeader`).
+- الفورم فيه حقول Email/Password، زر "Login" بصوت Click، ورسالة خطأ/نجاح تحت الفورم.
+- صوت النجاح `success.mp3` بيتشغل مع رسالة "Logged in successfully!" وبعد ٠.٨ ثانية يحول المستخدم للبوب أب.
+- لو فيه `logoutMsg` مخزنة فى `storage.local` بتظهر باللون الأحمر مع بداية الصفحة.
+- `performLogin` بيتعامل مباشرة مع Firebase REST API (`identitytoolkit`) وبيخزن `loggedIn`, `userEmail`, `loginTime` فى التخزين المحلى.
+
+## 5. البوب أب (popup.html / popup.js)
+- التصميم العام: خلفية داكنة مع فيديوهات صغيرة على الأزرار (class `icon-btn`)، وكل زر بيشغل `btn_hover.webm` على hover/click.
+- الجزء العلوى بيعرض:
+  - اسم البريد المسجل (`userEmail`).
+  - عداد تنازلى للوقت المتبقى فى الجلسة (فورمات hh:mm:ss) مع تحديث كل ثانية.
+  - زر Logout بيرجع المستخدم لصفحة الدخول بعد مسح التخزين.
+- **أزرار الأنماط:** سبعة أزرار (Open-ended, MCQ, Scale, Yes/No, Auto, OCR, Translate) بتظهر ثلاثة فى الصفحة الواحدة، مع أسهم Prev/Next للتبديل بينهم (كل صفحة ٣ عناصر).
+- زر "Auto" بيختار النوع تلقائى. لما المستخدم يضغط زر Mode:
+  1. يجمع النص المختار من الصفحة أو من OCR.
+  2. يبنى برومبت حسب النوع (`buildPrompt`).
+  3. يعرض حالة "Generating answer..." أو "🧠 Thinking..." لو الموديل فيه كلمة Thinking.
+  4. يستدعى `CEREBRAS_GENERATE` ويرجع النتيجة لمودال الإجابة.
+- زر `btnOCR` بيشغل Overlay الاختيار، يبعته للـbackground علشان OCR، ويحط النص فى الـtextarea `preview`.
+- `btnTranslate` حالياً Placeholder برسالة "Coming soon".
+- أزرار إضافية:
+  - `btnCopy` ينسخ آخر إجابة من preview.
+  - `btnWrite` يكتب الإجابة الحالية فى الصفحة بعد عد تنازلى ٣ ثوانى.
+  - `btnCustomPrompt` و`btnUseLastPrompt` بيتعاملوا مع البرومبتات المحفوظة (بيفتحوا مودال اختيار).
+- Navigation Links فى أسفل البوب أب:
+  - `navCustom`: يفتح نافذة custom web.
+  - `navIdent`: يفتح صفحة إدارة الهوية.
+  - `navOptions`: يفتح صفحة الإعدادات فى تاب جديد.
+  - `openActivityLog`: يحول للموقع `history.html` جوه نفس نافذة الامتداد.
+- `handleMode('auto')` وغيره بيحفظوا آخر سؤال/إجابة فى `chrome.storage.local` تحت `contextQA` لغاية ١٠ عناصر.
+
+## 6. صفحة الإعدادات (options.html / options.js)
+- الواجهة عبارة عن Modal على الشاشة كلها (blur + border بنفسجى) مع:
+  - Header فيه عنوان "Zepra Control Center"، زر إغلاق، وIndicator متحرك على الناف بار الجانبى.
+  - Sidebar فيه روابط لأقسام: Theme & API، LLM Settings، Typing & OCR، Custom Prompts، Custom Sites، إلخ. لكل رابط أيقونة SVG ونص.
+  - الIndicator `nav-indicator` بيتحرك بسلاسة حسب القسم المختار.
+- الـbody عبارة عن مساحة محتوى قابلة للتمرير لكل قسم، فيها عناصر فورم Styled (Toggle، Select، Inputs بألوان نيون).
+- زرار حفظ التعديلات عبارة عن شريط سفلى (`saveBar`) بيظهر لما يحصل تغييرات. فيه أزرار Reset و Save.
+- **إعدادات الـLLM:**
+  - حقول لمفتاح Cerebras، الموديل (Dropdown)، الـBase URL، Timeout بالثوانى، Temperature، Max Tokens، مع زر Reset Template بيجيب البرومبت الافتراضى من الخلفية.
+  - فى قسم "LLM Planner Template" فيه textarea كبير يعرض البرومبت الفعلى المستخدم فى الوكيل، مع زر لإرجاعه للـdefault.
+- **إعدادات أخرى:**
+  - `typingSpeed` (fast/normal/slow)، `showReasoning` toggle، لغة التفسير، لغة الـOCR.
+  - `customWebSize` (width/height) لحفظ مقاس نافذة الويب المخصص.
+  - `primaryColor` بتغير اللون الأساسى (بينعكس فوراً على المتغير `--accent`).
+  - خانات لحفظ مفتاح OCR.space، مفتاح ipdata، مع زر "Test" بيستدعى `TEST_IPDATA` ويعرض Toast نجاح/فشل.
+- **إدارة البرومبتات:**
+  - جدول يظهر الاسم، التاجز، الهوت كى، وزر Edit/Delete لكل برومبت.
+  - فورم لإنشاء/تعديل البرومبت مع حقول الاسم، التاجز، الهوت كى، النص.
+- **المواقع المخصصة:**
+  - قائمة بالمواقع، مع حقول لإضافة موقع جديد (اسم + URL)، وزر Add. بتتخزن فى `chrome.storage.local.customSites`.
+- الصفحة بتستخدم أصوات النقر، Animations، Overlay تحميل شفاف يظهر أثناء حفظ التعديلات.
+
+## 7. إدارة الهوية (identities.html / identities.js)
+- الواجهة Grid من الكروت، كل كارت يعرض فيديو فى الخلفية، Badge "Active"، الاسم، البريد، وزرار Activate/Deactivate، Edit، Delete.
+- زر "Create Identity" يفتح Panel جانبى فيه فورم لكل حقول الهوية (الاسم، البريد، التليفون، العنوان، بيانات الشركة...).
+- زر "AI Identity" يفتح نفس البانل بس فى وضع AI: يعرض textarea للبرومبت وزر Generate. أثناء الانتظار بيظهر Skeleton Animated (`aiSkeleton`).
+- بعد ما الـLLM يرجع JSON بيتحول أوتوماتيكياً للفورم اليدوى علشان المستخدم يعدل قبل الحفظ.
+- الهوية النشطة بتتخزن فى `chrome.storage.local.activeIdentityId`، وكل الهويات فى `identities`.
+
+## 8. نافذة الويب المخصص (custom_web.html / custom_web.js)
+- عبارة عن واجهة فيها Dropdown للمواقع المحفوظة، زر Toggle لإخفاء/إظهار القائمة، أزرار "Write Here" و"Clear Data"، ومساحة `iframe` بتبدل بين المواقع.
+- عند الضغط على "Write Here" بيسحب التحديد من الـiframe أو يحاول يعمل Copy ويبعته للتاب الأصلى عشان يتكتب بنفس سرعات الكتابة فى الإعدادات.
+- "Clear Data" بيمسح الكوكيز والـlocalStorage للموقع الحالى باستخدام `chrome.browsingData.remove`.
+- بتحفظ مقاس النافذة فى `chrome.storage.local.customWebSize` مع كل Resize/Unload.
+- بيستورد المواقع الافتراضية (Easemate Chat، Whoer، Bypass AI Humanizer، Prinsh Notepad) ولو فيه URLs جاية من البوب أب بيتضيفوا مؤقتاً.
+
+## 9. سجل التصفح (history.html / history.js)
+- يعرض آخر ١٠٠٠ عنصر من `chrome.history.search` فى شكل Cards بسيطة فيها العنوان، الرابط، وزراير:
+  - Open ↗ (فتح فى تاب جديد)
+  - Copy 📋 (نسخ الرابط)
+  - Add ➕ (إضافة للمواقع المخصصة فى custom web)
+- فى أعلى الصفحة حقل بحث لحصر النتائج.
+
+## 10. ملفات إضافية
+- **theme.js:** بيطبق اللون الأساسى المخزن على المتغير `--accent` وبيوفر وظيفة `showLoadingIndicator` (فيديو webm صغير) تتستخدم فى صفحات تانية.
+- **youtube-dubbing.js:** سكربت محتوى مخصص ليوتيوب، بيضيف زر دائرى على شريط أدوات الفيديو، بيفتح مودال Floating فيه اختيار لغة (من قائمة iFlytek) وتفاصيل معالجة الصوت. فيه نظام Drag للزر، وتحكم فى الصوت الأصلى للفيديو.
+- **styles.css / theme.css:** بيثبتوا الثيم الداكن، الخطوط، تأثيرات الخلفية الشبكية، ألوان الأخضر والوردى المتوهجة المستخدمة فى كل الواجهات.
+- **docs/agent_integration_phase0.md:** مستند سابق بيوثق مقارنة Zepra مع Nanobrowser قبل الدمج.
+
+## 11. تجربة المستخدم العامة
+- كل النوافذ بتشتغل بنفس التيمة: خلفيات زجاجية، بوردارات متوهجة، فيديوهات looping، وحركات hover.
+- فى البوب أب والخيارات، فيه صوت click لكل زر (موجود فى `src/media/click.mp3`).
+- العد التنازلى قبل الكتابة بيدي المستخدم فرصة يركز على الحقل الصحيح.
+- الفقاعة العائمة بتضمن الوصول لكل الأدوات من الصفحة نفسها بدون الرجوع للبوب أب.
+- الـSurvey Agent بقى مكامل بالكامل: تشات زى Nanobrowser، إمكانية تشغيل تلقائى أو التعلم الذكى باستخدام الهوية والـOCR، وتسجيل النتائج فى التاريخ.
+
+## 12. الصلاحيات والاعتمادات
+- الصلاحيات الرئيسية: `activeTab`, `scripting`, `tabs`, `contextMenus`, `notifications`, `clipboardRead`, `clipboardWrite`, `history`, `browsingData`.
+- `host_permissions` مفتوحة لـ `<all_urls>` علشان الوكيل والـOCR يشتغلوا جوه أى إطار، بالإضافة لـAPIs محددة (Cerebras، OCR.space، ipdata، ip-score، mail.tm، randomuser...).
+- مصادر الويب المتاحة (`web_accessible_resources`) بتضمن الأيقونات، ملفات الميديا، وملفات الـDOM Snapshot علشان الإطارات الداخلية تقدر تستخدمها.
+
+## 13. أفكار جاهزة للتكامل المستقبلى
+- الواجهة الحالية بتدعم التعديل السريع على الثيم، فممكن تستغل `primaryColor` لتوحيد ألوان السايد بانل بتاع الوكيل مع باقى الواجهات.
+- بما إن الـSurvey Agent بيسجل تاريخه فى `surveyAgentHistory`، ممكن تعمل صفحة عرض داخل options أو history لعرض الجلسات السابقة.
+- الـOCR والهوية والـIP متاحين بالفعل، فدمجهم مع خطوات الوكيل (مثلاً إظهار تحذير لو الـIP مش مؤهل قبل بدء التشغيل) هيكون بسيط لأن الخلفية مجهزة برسائل واضحة.
+

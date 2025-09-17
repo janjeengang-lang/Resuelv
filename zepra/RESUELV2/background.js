@@ -3,10 +3,22 @@
 // - OCR via OCR.space
 // - Public IP via ipdata with fallback services
 
+importScripts('src/agent/actions.js', 'src/agent/planner.js');
+
+const surveyAgentActions = self.surveyAgentActions || null;
+const surveyAgentPlanner = self.surveyAgentPlanner || null;
+
 const DEFAULTS = {
   cerebrasModel: 'gpt-oss-120b',
   typingSpeed: 'normal', // fast | normal | slow
   ocrLang: 'eng',
+  cerebrasBaseUrl: 'https://api.cerebras.ai/v1',
+  cerebrasTimeoutMs: 60 * 1000,
+  cerebrasTemperature: 0.2,
+  cerebrasMaxTokens: 1024,
+  surveyPlannerPromptTemplate: typeof self.SURVEY_AGENT_DEFAULT_PROMPT_TEMPLATE === 'string'
+    ? self.SURVEY_AGENT_DEFAULT_PROMPT_TEMPLATE
+    : ''
 };
 
 const SESSION_DURATION = 3 * 60 * 60 * 1000; // 3 hours
@@ -116,6 +128,128 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         case 'CEREBRAS_GENERATE': {
           const result = await callCerebras(message.prompt);
           sendResponse({ ok: true, result });
+          break;
+        }
+        case 'SURVEY_AGENT_REQUEST_DOM': {
+          const targetTabId = message.tabId || sender?.tab?.id || (await getActiveTabId());
+          if (!targetTabId) {
+            sendResponse({ ok: false, error: 'NO_ACTIVE_TAB' });
+            break;
+          }
+          try {
+            const domResponse = await chrome.tabs.sendMessage(targetTabId, {
+              type: 'SURVEY_AGENT_COLLECT_DOM',
+              options: message.options || {}
+            });
+            if (domResponse && domResponse.ok && domResponse.tree) {
+              sendResponse({ ok: true, tree: domResponse.tree });
+            } else {
+              sendResponse({ ok: false, error: domResponse?.error || 'DOM_TREE_UNAVAILABLE' });
+            }
+          } catch (err) {
+            sendResponse({ ok: false, error: err?.message || String(err) });
+          }
+          break;
+        }
+        case 'SURVEY_AGENT_EXECUTE_ACTION': {
+          const targetTabId = message.tabId || sender?.tab?.id || (await getActiveTabId());
+          if (!targetTabId) {
+            sendResponse({ ok: false, error: 'NO_ACTIVE_TAB' });
+            break;
+          }
+          if (!surveyAgentActions || typeof surveyAgentActions.execute !== 'function') {
+            sendResponse({ ok: false, error: 'SURVEY_ACTIONS_UNAVAILABLE' });
+            break;
+          }
+          try {
+            const result = await surveyAgentActions.execute(targetTabId, message.action || {});
+            sendResponse(result);
+          } catch (err) {
+            sendResponse({
+              ok: false,
+              error: err?.message || String(err),
+              code: err?.code,
+              details: err?.details,
+            });
+          }
+          break;
+        }
+        case 'SURVEY_AGENT_EXECUTE_BATCH': {
+          const targetTabId = message.tabId || sender?.tab?.id || (await getActiveTabId());
+          if (!targetTabId) {
+            sendResponse({ ok: false, error: 'NO_ACTIVE_TAB' });
+            break;
+          }
+          if (!surveyAgentActions || typeof surveyAgentActions.execute !== 'function') {
+            sendResponse({ ok: false, error: 'SURVEY_ACTIONS_UNAVAILABLE' });
+            break;
+          }
+          const steps = Array.isArray(message.steps) ? message.steps : [];
+          const stopOnFailure = message.stopOnFailure !== false;
+          const results = [];
+          let overallOk = true;
+          for (const step of steps) {
+            const result = await surveyAgentActions.execute(targetTabId, step || {});
+            results.push(result);
+            if (!result?.ok) {
+              overallOk = false;
+              if (stopOnFailure) break;
+            }
+          }
+          sendResponse({ ok: overallOk, results });
+          break;
+        }
+        case 'SURVEY_AGENT_PLAN_NEXT': {
+          if (!surveyAgentPlanner || typeof surveyAgentPlanner.planNext !== 'function') {
+            sendResponse({ ok: false, error: 'SURVEY_PLANNER_UNAVAILABLE' });
+            break;
+          }
+          try {
+            const result = await surveyAgentPlanner.planNext({
+              domTree: message.domTree,
+              history: Array.isArray(message.history) ? message.history : [],
+              goal: message.goal,
+              instructions: message.instructions,
+              options: message.options,
+              context: message.context,
+              conversation: message.conversation,
+            });
+            sendResponse(result);
+          } catch (err) {
+            sendResponse({
+              ok: false,
+              error: err?.message || String(err),
+              code: err?.code,
+              details: err?.details,
+            });
+          }
+          break;
+        }
+        case 'SURVEY_AGENT_GET_DEFAULT_PROMPT_TEMPLATE': {
+          sendResponse({
+            ok: true,
+            template: typeof self.SURVEY_AGENT_DEFAULT_PROMPT_TEMPLATE === 'string'
+              ? self.SURVEY_AGENT_DEFAULT_PROMPT_TEMPLATE
+              : ''
+          });
+          break;
+        }
+        case 'SURVEY_AGENT_SAVE_HISTORY': {
+          const record = message.record;
+          if (!record || typeof record !== 'object') {
+            sendResponse({ ok: false, error: 'INVALID_HISTORY_RECORD' });
+            break;
+          }
+          try {
+            const key = 'surveyAgentHistory';
+            const stored = await chrome.storage.local.get(key);
+            const list = Array.isArray(stored[key]) ? stored[key] : [];
+            const next = [record, ...list].slice(0, 25);
+            await chrome.storage.local.set({ [key]: next });
+            sendResponse({ ok: true, total: next.length });
+          } catch (err) {
+            sendResponse({ ok: false, error: err?.message || String(err) });
+          }
           break;
         }
         case 'CAPTURE_AND_OCR': {
@@ -286,8 +420,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 async function callCerebras(prompt) {
-  const { cerebrasApiKey = '', cerebrasModel } = await chrome.storage.local.get([
-    'cerebrasApiKey', 'cerebrasModel'
+  const {
+    cerebrasApiKey = '',
+    cerebrasModel,
+    cerebrasBaseUrl,
+    cerebrasTimeoutMs,
+    cerebrasTemperature,
+    cerebrasMaxTokens
+  } = await chrome.storage.local.get([
+    'cerebrasApiKey',
+    'cerebrasModel',
+    'cerebrasBaseUrl',
+    'cerebrasTimeoutMs',
+    'cerebrasTemperature',
+    'cerebrasMaxTokens'
   ]);
   if (!cerebrasApiKey) {
     const e = new Error('Missing Cerebras API key (set it in Options).');
@@ -295,29 +441,83 @@ async function callCerebras(prompt) {
     throw e;
   }
   const model = cerebrasModel || DEFAULTS.cerebrasModel;
-  const endpoint = 'https://api.cerebras.ai/v1/chat/completions';
+  const baseUrl = (cerebrasBaseUrl || DEFAULTS.cerebrasBaseUrl || 'https://api.cerebras.ai/v1').trim();
+  const timeout = Number.isFinite(cerebrasTimeoutMs) && cerebrasTimeoutMs > 0
+    ? cerebrasTimeoutMs
+    : DEFAULTS.cerebrasTimeoutMs || 60000;
+  const temperature = Number.isFinite(cerebrasTemperature)
+    ? Math.min(Math.max(cerebrasTemperature, 0), 2)
+    : (DEFAULTS.cerebrasTemperature ?? 0.2);
+  const maxTokens = Number.isFinite(cerebrasMaxTokens) && cerebrasMaxTokens > 0
+    ? Math.round(cerebrasMaxTokens)
+    : (DEFAULTS.cerebrasMaxTokens ?? 1024);
+
+  let endpoint = baseUrl;
+  if (!/\/chat\/completions$/i.test(endpoint)) {
+    endpoint = endpoint.replace(/\/$/, '') + '/chat/completions';
+  }
   const body = {
     model,
     messages: [{ role: 'user', content: prompt }],
-    temperature: 0.2,
-    max_completion_tokens: 1024
+    temperature
   };
+  if (maxTokens) {
+    body.max_completion_tokens = maxTokens;
+  }
   const headers = {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${cerebrasApiKey}`
   };
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  let timeoutId;
   try {
-    const res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
+    if (controller && timeout) {
+      timeoutId = setTimeout(() => controller.abort(), timeout);
+    }
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: controller ? controller.signal : undefined
+    });
     if (!res.ok) {
-      const t = await res.text().catch(() => '');
-      throw new Error(`Cerebras error ${res.status}: ${t}`);
+      const raw = await res.text().catch(() => '');
+      let parsed;
+      try {
+        parsed = raw ? JSON.parse(raw) : null;
+      } catch (parseErr) {
+        parsed = null;
+      }
+      const err = new Error(`Cerebras error ${res.status}: ${raw}`);
+      if (res.status === 429) {
+        err.code = 'CEREBRAS_RATE_LIMIT';
+      } else if (res.status === 401 || res.status === 403) {
+        err.code = 'CEREBRAS_AUTH';
+      }
+      if (parsed && typeof parsed === 'object') {
+        err.details = parsed;
+        if (!err.code && typeof parsed.code === 'string') {
+          err.code = parsed.code;
+        }
+      }
+      throw err;
     }
     const data = await res.json();
     const text = data?.choices?.[0]?.message?.content || data?.choices?.[0]?.delta?.content || '';
     return sanitize(text);
   } catch (err) {
+    if (err?.name === 'AbortError') {
+      const timeoutError = new Error(`Cerebras request timed out after ${timeout} ms`);
+      timeoutError.code = 'CEREBRAS_TIMEOUT';
+      console.error('Zepra Debug: Cerebras fetch timed out');
+      throw timeoutError;
+    }
     console.error('Zepra Debug: Cerebras fetch failed:', err);
     throw err;
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
   }
 }
 

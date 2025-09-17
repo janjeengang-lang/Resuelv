@@ -290,6 +290,13 @@
       background: rgba(0, 0, 0, 0.6);
     }
 
+    .form-hint {
+      font-size: 12px;
+      color: #94a3b8;
+      line-height: 1.5;
+      margin-top: 8px;
+    }
+
     /* Toggle switch */
     .toggle-switch {
       position: relative;
@@ -778,6 +785,29 @@
                 </select>
               </div>
             </div>
+
+            <div class="settings-card">
+              <h3 class="card-title">LLM Advanced Settings</h3>
+              <div class="form-group">
+                <label class="form-label">Cerebras Base URL</label>
+                <input type="text" id="cerebrasBaseUrl" class="form-input" placeholder="https://api.cerebras.ai/v1">
+                <p class="form-hint">The agent automatically appends <code>/chat/completions</code> if needed.</p>
+              </div>
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px;">
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label class="form-label">Request Timeout (seconds)</label>
+                  <input type="number" min="5" max="180" step="1" id="cerebrasTimeout" class="form-input" placeholder="60">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label class="form-label">Temperature</label>
+                  <input type="number" min="0" max="2" step="0.1" id="cerebrasTemperature" class="form-input" placeholder="0.2">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label class="form-label">Max Completion Tokens</label>
+                  <input type="number" min="16" max="4096" step="1" id="cerebrasMaxTokens" class="form-input" placeholder="1024">
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- Reasoning & OCR Section -->
@@ -805,6 +835,21 @@
                   <option value="eng" selected>English (eng)</option>
                   <option value="ara">Arabic (ara)</option>
                 </select>
+              </div>
+            </div>
+
+            <div class="settings-card">
+              <h3 class="card-title">Planner Prompt Template</h3>
+              <div class="form-group">
+                <label class="form-label" for="plannerPromptTemplate">Template</label>
+                <textarea id="plannerPromptTemplate" class="form-input" rows="10" spellcheck="false"></textarea>
+                <p class="form-hint">
+                  Placeholders: <code>{{GOAL_SECTION}}</code>, <code>{{ALLOWED_ACTIONS}}</code>, <code>{{FORMAT_GUIDE}}</code>,
+                  <code>{{RULES}}</code>, <code>{{DOM_SUMMARY}}</code>, <code>{{HISTORY}}</code>, <code>{{EXTRA_INSTRUCTIONS}}</code>.
+                </p>
+              </div>
+              <div style="display: flex; justify-content: flex-end; gap: 12px;">
+                <button id="resetPlannerTemplate" type="button" class="btn btn-reset">Reset to Default</button>
               </div>
             </div>
           </div>
