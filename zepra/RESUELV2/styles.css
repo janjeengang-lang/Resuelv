@@ -1,0 +1,84 @@
+:root {
+  --bg: #000000;
+  --fg: #e2e8f0;
+  --muted: #94a3b8;
+  --accent: #39ff14;
+  --accent2: #ffe600;
+  --warn: #ef4444;
+  --card: #0b0b0b;
+  --btn: #1a1a1a;
+}
+/* Neon gradient text for Zepra branding */
+.zepra-gradient {
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text;
+  color: transparent;
+  text-shadow: 0 0 8px rgba(57,255,20,0.6), 0 0 8px rgba(255,230,0,0.6);
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 13px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--fg); }
+.page { padding: 12px; }
+.title { font-weight: 600; }
+.link { color: var(--accent); cursor: pointer; text-decoration: underline; }
+.group { padding: 10px; border-bottom: 1px solid #1f2937; }
+.subtitle { margin: 6px 0 8px; color: var(--muted); font-weight: 600; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.row.end { justify-content: flex-end; }
+.btn { background: var(--btn); color: var(--fg); border: 1px solid #334155; border-radius: 6px; padding: 8px 10px; cursor: pointer; }
+.btn:hover { filter: brightness(1.1); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #0b1215; font-weight: 600; }
+  .btn.warn { background: #1f2937; border-color: var(--warn); color: var(--warn); }
+  .status { margin: 8px 10px; color: var(--muted); white-space: pre-wrap; }
+  .status.error { color: #fda4af; }
+  .previewBox { width: 100%; resize: vertical; border-radius: 6px; border: 1px solid #334155; background: #0b1220; color: var(--fg); padding: 8px; }
+  label.row { justify-content: space-between; }
+  label.row > input, label.row > select { flex: 1; margin-left: 8px; padding: 6px 8px; border-radius: 6px; border: 1px solid #334155; background: #0b1220; color: var(--fg); }
+
+/* Generic header video block */
+.header-video {
+  position: relative;
+  width: 100%;
+  height: 120px;
+  overflow: hidden;
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+.header-video video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 0;
+  max-height: 100%;
+  transition: opacity 0.6s;
+}
+
+.loading-indicator {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 40px;
+  height: 40px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.icon-btn {
+  position: relative;
+  overflow: hidden;
+}
+
+.icon-btn video.btn-anim {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.thinking-icon{display:inline-block;margin-right:6px;animation:pulse 1s infinite;}
+@keyframes pulse{0%,100%{filter:drop-shadow(0 0 0 var(--accent));}50%{filter:drop-shadow(0 0 6px var(--accent));}}
