@@ -9,38 +9,8 @@ const DEFAULTS = {
   ocrLang: 'eng',
 };
 
-// IP info services used to validate proxies. We iterate these in order
-// until one responds successfully to avoid single-endpoint failures.
-const TEST_APIS = [
-  'https://api.ipify.org?format=json',
-  'https://ipinfo.io/json',
-  'https://ifconfig.me/ip',
-];
-
 const SESSION_DURATION = 3 * 60 * 60 * 1000; // 3 hours
 
-// Supply credentials to authenticated proxies. Credentials are retrieved
-// from storage each time so a service worker restart does not lose them.
-chrome.webRequest.onAuthRequired.addListener(
-  async (details) => {
-    if (details.isProxy) {
-      const { proxyAuth } = await chrome.storage.local.get('proxyAuth');
-      console.log('onAuthRequired triggered', details.challenger, proxyAuth);
-      if (proxyAuth?.username) {
-        return {
-          authCredentials: {
-            username: proxyAuth.username,
-            password: proxyAuth.password,
-          },
-        };
-      }
-    }
-    console.log('onAuthRequired: no credentials supplied');
-    return {};
-  },
-  { urls: ['<all_urls>'] },
-  ['blocking']
-);
 
 
 async function forceLogout(reason = 'Your session has expired. Please log in again.') {
@@ -207,7 +177,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           if (title && body) {
             chrome.notifications.create('', {
               type: 'basic',
-              iconUrl: 'icons/icon128.png',
+              iconUrl: 'icons/zepra.svg',
               title,
               message: body
             });
@@ -284,64 +254,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ ok: true, result });
           break;
         }
-        case 'SET_PROXY': {
-          try {
-            const proxy = message.proxy || {};
-            const realInfo = await fetchIPInfoWithTimeout();
-            await validateProxy(proxy); // pre-check
-
-            const scheme = (proxy.proxyType || 'http').toLowerCase();
-            const singleProxy = {
-              scheme,
-              host: proxy.proxyIp,
-              port: parseInt(proxy.proxyPort, 10) || 0
-            };
-            if (scheme.startsWith('socks') && proxy.proxyUsername) {
-              singleProxy.host = `${proxy.proxyUsername}:${proxy.proxyPassword || ''}@${proxy.proxyIp}`;
-            } else {
-              await chrome.storage.local.set({ proxyAuth: { username: proxy.proxyUsername, password: proxy.proxyPassword } });
-            }
-
-            await chrome.proxy.settings.set({
-              value: {
-                mode: 'fixed_servers',
-                rules: { singleProxy }
-              },
-              scope: 'regular'
-            });
-            try {
-              const info = await fetchIPInfoWithTimeout();
-              if (!info.ip || info.ip === realInfo.ip) throw new Error('Connection failed');
-              await chrome.storage.local.set({ proxyActive: true, proxyInfo: info, proxyUsage: 0 });
-              startUsageMonitor();
-              sendResponse({ ok: true, info });
-            } catch (e) {
-              await chrome.proxy.settings.clear({ scope: 'regular' });
-              await chrome.storage.local.remove('proxyAuth');
-              throw e;
-            }
-          } catch (e) {
-            sendResponse({ ok: false, error: mapProxyError(e) });
-          }
-          break;
-        }
-        case 'CLEAR_PROXY': {
-          await chrome.proxy.settings.clear({ scope: 'regular' });
-          await chrome.storage.local.set({ proxyActive: false, proxyInfo: null, proxyUsage: 0 });
-          await chrome.storage.local.remove('proxyAuth');
-          stopUsageMonitor();
-          sendResponse({ ok: true });
-          break;
-        }
-        case 'TEST_PROXY': {
-          try {
-            const info = await validateProxy(message.proxy || {});
-            sendResponse({ ok: true, info });
-          } catch (e) {
-            sendResponse({ ok: false, error: mapProxyError(e) });
-          }
-          break;
-        }
         default:
           sendResponse({ ok: false, error: 'Unknown message type' });
       }
@@ -351,32 +263,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   })();
   return true; // async
 });
-
-let usageListener = null;
-function startUsageMonitor() {
-  usageListener = (details) => {
-    const cl = details.responseHeaders?.find(h => h.name.toLowerCase() === 'content-length');
-    if (cl) {
-      const val = parseInt(cl.value, 10);
-      if (!isNaN(val)) {
-        chrome.storage.local.get('proxyUsage', ({ proxyUsage = 0 }) => {
-          chrome.storage.local.set({ proxyUsage: proxyUsage + val });
-        });
-      }
-    }
-  };
-  try {
-    chrome.webRequest.onCompleted.addListener(usageListener, { urls: ['<all_urls>'] }, ['responseHeaders']);
-  } catch (e) {
-    console.error('usage listener error', e);
-  }
-}
-function stopUsageMonitor() {
-  if (usageListener) {
-    try { chrome.webRequest.onCompleted.removeListener(usageListener); } catch (e) {}
-    usageListener = null;
-  }
-}
 
 async function callCerebras(prompt) {
   const { cerebrasApiKey = '', cerebrasModel } = await chrome.storage.local.get([
@@ -596,78 +482,17 @@ function isIP(host) {
   return /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
 }
 
-async function resolveHostname(host) {
-  if (isIP(host)) return host;
-  const url = `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(host)}&type=A`;
-  const res = await fetch(url, { headers: { accept: 'application/dns-json' } });
-  if (!res.ok) throw new Error('DNS Not Resolved');
-  const data = await res.json();
-  const answer = data.Answer?.find(a => a.type === 1);
-  if (!answer?.data) throw new Error('DNS Not Resolved');
-  return answer.data;
-}
 
-function mapProxyError(e) {
-  const msg = e?.message || String(e);
-  if (msg.includes('DNS Not Resolved') || msg.includes('Invalid Hostname')) return '❌ Failed: DNS Not Resolved';
-  if (msg.includes('407') || msg.toLowerCase().includes('auth')) return '❌ Failed: Authentication Required';
-  if (msg.includes('timed out') || msg.includes('Timeout') || msg.includes('aborted')) return '❌ Failed: Connection Timed Out';
-  if (msg.includes('Connection failed')) return '❌ Failed: Connection Failed';
-  return '❌ Proxy is offline or refusing connection';
-}
-
-async function fetchIPInfoWithTimeout(timeoutMs = 8000) {
-  let lastErr = null;
-  for (const api of TEST_APIS) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const res = await fetch(api, { signal: controller.signal });
-      clearTimeout(timer);
-      if (res.status === 407 || res.status === 401) throw new Error('407');
-      if (!res.ok) throw new Error('IP check failed');
-      if (api.includes('ipify')) {
-        const d = await res.json();
-        return { ip: d.ip };
-      } else if (api.includes('ipinfo')) {
-        const d = await res.json();
-        return { ip: d.ip, city: d.city, country: d.country };
-      } else {
-        const text = await res.text();
-        return { ip: text.trim() };
-      }
-    } catch (e) {
-      clearTimeout(timer);
-      lastErr = e.name === 'AbortError' ? new Error('Connection timed out') : e;
-    }
-  }
-  if (lastErr) throw lastErr;
-  throw new Error('IP check failed');
-}
-
-async function validateProxy(proxy) {
-  await resolveHostname(proxy.proxyIp);
-  const scheme = (proxy.proxyType || 'http').toLowerCase();
-  const singleProxy = {
-    scheme,
-    host: proxy.proxyIp,
-    port: parseInt(proxy.proxyPort, 10) || 0
-  };
-  if (scheme.startsWith('socks') && proxy.proxyUsername) {
-    singleProxy.host = `${proxy.proxyUsername}:${proxy.proxyPassword || ''}@${proxy.proxyIp}`;
-  } else {
-    await chrome.storage.local.set({ proxyAuth: { username: proxy.proxyUsername, password: proxy.proxyPassword } });
-  }
+function notify(title, message) {
   try {
-    await chrome.proxy.settings.set({
-      value: { mode: 'fixed_servers', rules: { singleProxy } },
-      scope: 'regular'
+    chrome.notifications.create('', {
+      type: 'basic',
+      iconUrl: chrome.runtime.getURL('icons/zepra.svg'),
+      title,
+      message,
     });
-    const info = await fetchIPInfoWithTimeout();
-    return info;
-  } finally {
-    try { await chrome.proxy.settings.clear({ scope: 'regular' }); } catch (e) {}
-    await chrome.storage.local.remove('proxyAuth');
+  } catch (err) {
+    console.warn('notify failed', err);
   }
 }
 
