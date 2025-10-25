@@ -12,6 +12,21 @@ const emailEl = document.getElementById('email');
 const passEl = document.getElementById('password');
 const btn = document.getElementById('loginBtn');
 const msg = document.getElementById('loginError');
+let bgVideo = document.getElementById('bgVideo');
+
+function switchBg(src){
+  if(!bgVideo) return;
+  const newVid = document.createElement('video');
+  newVid.id = 'bgVideo';
+  newVid.autoplay = true;
+  newVid.loop = true;
+  newVid.muted = true;
+  newVid.src = src;
+  newVid.style.opacity = 0;
+  document.body.prepend(newVid);
+  requestAnimationFrame(()=>{ newVid.style.opacity = 0.4; });
+  setTimeout(()=>{ if(bgVideo) bgVideo.remove(); bgVideo = newVid; },600);
+}
 
 // Redirect if already logged in and show any logout message
 chrome.storage.local.get(['loggedIn', 'logoutMsg'], ({ loggedIn, logoutMsg }) => {
@@ -49,8 +64,10 @@ btn.addEventListener('click', async () => {
     });
     msg.style.color = 'var(--accent)';
     msg.textContent = 'Logged in successfully!';
+    switchBg('src/media/zepra.webm');
     setTimeout(() => { window.location.href = 'popup.html'; }, 800);
   } catch (e) {
+    switchBg('src/media/carry.webm');
     msg.textContent = 'Invalid email or password';
   }
 });
